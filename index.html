@@ -83,7 +83,7 @@
                         <h1 class="text-xl md:text-2xl font-bold text-white tracking-tight">
                             Gestor de Pagamentos
                         </h1>
-                        <p class="text-white/90 text-xs md:text-sm font-medium">Extrator NFSe • v47.0</p>
+                        <p class="text-white/90 text-xs md:text-sm font-medium">Extrator NFSe • v48.0</p>
                     </div>
                 </div>
                 
@@ -273,6 +273,14 @@
                     <i data-lucide="users" class="w-4 h-4 text-blue-600"></i> Importar Base
                 </button>
                 <input type="file" id="baseMotoristaInput" accept=".xlsx" class="hidden">
+                <button onclick="document.getElementById('cnpjPixInput').click()" class="flex items-center gap-2 bg-white hover:bg-gray-50 border border-gray-300 text-gray-700 px-3 py-2 rounded-lg font-semibold text-sm transition-all" title="Importar planilha com CNPJs e chaves PIX (colunas: ID | Nome | CNPJ | Chave PIX)">
+                    <i data-lucide="key" class="w-4 h-4 text-purple-600"></i> Importar CNPJs/PIX
+                </button>
+                <input type="file" id="cnpjPixInput" accept=".xlsx" class="hidden">
+                <button onclick="document.getElementById('contratosZipInput').click()" class="flex items-center gap-2 bg-white hover:bg-gray-50 border border-gray-300 text-gray-700 px-3 py-2 rounded-lg font-semibold text-sm transition-all" title="Importar ZIP com contratos nomeados como contrato_{id}_{nome}.pdf">
+                    <i data-lucide="archive" class="w-4 h-4 text-orange-600"></i> Importar Contratos ZIP
+                </button>
+                <input type="file" id="contratosZipInput" accept=".zip" class="hidden">
                 <button onclick="exportPrestadoresExcel()" class="flex items-center gap-2 bg-white hover:bg-gray-50 border border-gray-300 text-gray-700 px-3 py-2 rounded-lg font-semibold text-sm transition-all">
                     <i data-lucide="file-spreadsheet" class="w-4 h-4"></i> Exportar
                 </button>
@@ -774,15 +782,191 @@
                 await importarBaseMotoristasExcel(file);
                 e.target.value = '';
             });
+
+            const cnpjPixInput = document.getElementById('cnpjPixInput');
+            if (cnpjPixInput) cnpjPixInput.addEventListener('change', async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                await importarCnpjPixExcel(file);
+                e.target.value = '';
+            });
+
+            const contratosZipInput = document.getElementById('contratosZipInput');
+            if (contratosZipInput) contratosZipInput.addEventListener('change', async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                await importarContratosZip(file);
+                e.target.value = '';
+            });
         });
 
-        async function importarBaseMotoristasExcel(file) {
+        // ========================================
+        // IMPORTAR CNPJs/PIX EM MASSA
+        // Colunas: ID (vehicle_id) | Nome | CNPJ | Chave PIX
+        // ========================================
+
+        async function importarCnpjPixExcel(file) {
             try {
                 const buf = await file.arrayBuffer();
                 const wb = XLSX.read(buf, { type: 'array' });
                 const ws = wb.Sheets[wb.SheetNames[0]];
-                const rows = XLSX.utils.sheet_to_json(ws, { header: 1 }).slice(1).filter(r => r[0]);
-                const CDS_TESTE = ['cd teste - frexco', 'cd teste - piedade', 'cd teste'];
+                const rows = XLSX.utils.sheet_to_json(ws, { header: 1 }).slice(1)
+                    .filter(r => r[0] || r[1]);
+
+                const conflitos = [];
+                let atualizados = 0, ignorados = 0;
+
+                for (const row of rows) {
+                    const vehicleId = row[0] ? parseInt(row[0]) : null;
+                    const nomeRow   = (row[1] || '').toString().trim();
+                    const cnpj      = (row[2] || '').toString().trim();
+                    const chavePix  = (row[3] || '').toString().trim();
+
+                    if (!cnpj && !chavePix) { ignorados++; continue; }
+
+                    // Encontrar prestador: por vehicleId primeiro, depois por nome
+                    let prestador = vehicleId ? findPrestadorByVehicleId(vehicleId) : null;
+                    if (!prestador && nomeRow) prestador = findPrestadorByNome(nomeRow);
+                    if (!prestador) { conflitos.push(`Não encontrado: ID ${vehicleId} / "${nomeRow}"`); continue; }
+
+                    // Verificar duplicata de CNPJ global
+                    if (cnpj) {
+                        const norm = normalizeCnpj(cnpj);
+                        const dono = prestadoresList.find(p =>
+                            p !== prestador &&
+                            Array.isArray(p.cnpjs) && p.cnpjs.some(c => normalizeCnpj(c.cnpj) === norm)
+                        );
+                        if (dono) {
+                            conflitos.push(`CNPJ ${cnpj} já pertence a "${dono.nome}" — linha "${nomeRow}" ignorada`);
+                            continue;
+                        }
+                    }
+
+                    // Adicionar/atualizar entrada no array cnpjs
+                    if (!Array.isArray(prestador.cnpjs)) prestador.cnpjs = [];
+
+                    if (cnpj) {
+                        const norm = normalizeCnpj(cnpj);
+                        const existing = prestador.cnpjs.find(c => normalizeCnpj(c.cnpj) === norm);
+                        if (existing) {
+                            // Atualiza PIX do CNPJ existente
+                            if (chavePix) existing.chavePix = chavePix;
+                        } else {
+                            prestador.cnpjs.push({ cnpj, chavePix });
+                        }
+                    } else if (chavePix && prestador.cnpjs.length > 0) {
+                        // Só PIX sem CNPJ: atualiza o primeiro registro
+                        prestador.cnpjs[0].chavePix = chavePix;
+                    }
+                    prestador.dataAtualizacao = new Date().toISOString();
+                    if (!useSharePoint) await savePrestadorLocal(prestador);
+                    atualizados++;
+                }
+
+                if (useSharePoint) {
+                    await savePrestadoresSP_internal();
+                    await loadPrestadoresFromSharePoint();
+                } else {
+                    await loadPrestadoresLocal();
+                }
+                reprocessExtractedResults();
+
+                let msg = `✅ CNPJs/PIX importados!\n\n${atualizados} prestador(es) atualizados`;
+                if (ignorados) msg += `\n${ignorados} linha(s) sem dados ignoradas`;
+                if (conflitos.length) msg += `\n\n⚠️ ${conflitos.length} conflito(s):\n${conflitos.slice(0, 10).join('\n')}`;
+                alert(msg);
+            } catch(e) {
+                console.error(e);
+                alert('Erro ao processar planilha de CNPJs/PIX.');
+            }
+        }
+
+        // ========================================
+        // IMPORTAR CONTRATOS EM MASSA (ZIP)
+        // Formato dos arquivos: contrato_{vehicleId}_{nome}.pdf
+        // ========================================
+
+        async function importarContratosZip(file) {
+            try {
+                const buf = await file.arrayBuffer();
+                const zip = await JSZip.loadAsync(buf);
+                const pdfFiles = Object.keys(zip.files).filter(n => n.toLowerCase().endsWith('.pdf') && !zip.files[n].dir);
+
+                let importados = 0, substituidos = 0;
+                const naoEncontrados = [];
+
+                for (const fileName of pdfFiles) {
+                    const baseName = fileName.replace(/^.*[\\/]/, ''); // strip path
+                    // Parse: contrato_{vehicleId}_{nome}.pdf
+                    const match = baseName.match(/^contrato_(\d+)_(.+)\.pdf$/i);
+
+                    let prestador = null;
+                    if (match) {
+                        const vehicleId = parseInt(match[1]);
+                        prestador = findPrestadorByVehicleId(vehicleId);
+                        if (!prestador) {
+                            // Fallback: tenta pelo nome
+                            const nomePart = match[2];
+                            prestador = findPrestadorByNome(nomePart);
+                        }
+                    } else {
+                        // Arquivo não segue o padrão — tenta pelo nome sem extensão
+                        const nomePart = baseName.replace(/\.pdf$/i, '');
+                        prestador = findPrestadorByNome(nomePart);
+                    }
+
+                    if (!prestador) {
+                        naoEncontrados.push(baseName);
+                        continue;
+                    }
+
+                    const jaTemContrato = prestador.contrato != null;
+
+                    // Ler o PDF como base64
+                    const pdfData = await zip.files[fileName].async('base64');
+                    const dataUrl = `data:application/pdf;base64,${pdfData}`;
+
+                    if (useSharePoint) {
+                        // Converter base64 para Blob e fazer upload
+                        const binaryStr = atob(pdfData);
+                        const bytes = new Uint8Array(binaryStr.length);
+                        for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+                        const blob = new Blob([bytes], { type: 'application/pdf' });
+                        const spFile = new File([blob], baseName, { type: 'application/pdf' });
+                        const result = await uploadContratoSP(prestador.vehicleId || prestador.id, spFile);
+                        if (result) {
+                            if (useSharePoint && prestador.contrato && prestador.contrato.id) {
+                                await deleteContratoSP(prestador.contrato.id);
+                            }
+                            prestador.contrato = result;
+                        }
+                    } else {
+                        prestador.contrato = { nomeArquivo: baseName, fileData: dataUrl, dataUpload: new Date().toISOString() };
+                        await savePrestadorLocal(prestador);
+                    }
+
+                    jaTemContrato ? substituidos++ : importados++;
+                }
+
+                if (useSharePoint) {
+                    await savePrestadoresSP_internal();
+                    await loadPrestadoresFromSharePoint();
+                } else {
+                    await loadPrestadoresLocal();
+                }
+                reprocessExtractedResults();
+
+                let msg = `✅ Contratos importados!\n\n${importados} novo(s)\n${substituidos} substituído(s)`;
+                if (naoEncontrados.length) msg += `\n\n⚠️ ${naoEncontrados.length} não encontrado(s):\n${naoEncontrados.slice(0, 10).join('\n')}`;
+                alert(msg);
+            } catch(e) {
+                console.error(e);
+                alert('Erro ao processar ZIP de contratos. Verifique se o arquivo é válido.');
+            }
+        }
+
+        async function importarBaseMotoristasExcel(file) {
+            try {
                 let novos = 0, atualizados = 0;
 
                 for (const row of rows) {
