@@ -83,7 +83,7 @@
                         <h1 class="text-xl md:text-2xl font-bold text-white tracking-tight">
                             Gestor de Pagamentos
                         </h1>
-                        <p class="text-white/90 text-xs md:text-sm font-medium">Extrator NFSe • v52.0</p>
+                        <p class="text-white/90 text-xs md:text-sm font-medium">Extrator NFSe • v53.0</p>
                     </div>
                 </div>
                 
@@ -469,6 +469,7 @@
                             <th class="px-3 py-2">Arquivo</th>
                             <th class="px-3 py-2">Responsável</th>
                             <th class="px-3 py-2">Motoristas</th>
+                            <th class="px-3 py-2 text-center">Data Emissão</th>
                             <th class="px-3 py-2 text-right">Valor Nota (R$)</th>
                             <th class="px-3 py-2 text-right">Valor Devido (R$)</th>
                             <th class="px-3 py-2 text-right">Diferença (R$)</th>
@@ -1165,16 +1166,33 @@
         async function importarRecebivelExcel(file) {
             try {
                 const buf = await file.arrayBuffer();
-                const wb = XLSX.read(buf, { type: 'array' });
+                const wb = XLSX.read(buf, { type: 'array', cellDates: true });
                 const ws = wb.Sheets[wb.SheetNames[0]];
                 const rows = XLSX.utils.sheet_to_json(ws, { header: 1 }).slice(1).filter(r => r[0]);
-                recebivelData = rows.map(r => ({
-                    data: r[0] instanceof Date ? r[0] : new Date(r[0]),
-                    vehicleId: parseInt(r[1]),
-                    time: (r[2] || '').toString().trim(),
-                    nome: (r[3] || '').toString().trim(),
-                    totalMotorista: parseFloat(r[9]) || 0
-                })).filter(r => !isNaN(r.vehicleId));
+
+                recebivelData = rows.map(r => {
+                    let data;
+                    if (r[0] instanceof Date) {
+                        data = r[0];
+                    } else if (typeof r[0] === 'number') {
+                        // Excel serial date — XLSX with cellDates:true should handle this,
+                        // but just in case: convert manually
+                        const epoch = new Date(Date.UTC(1899, 11, 30));
+                        data = new Date(epoch.getTime() + r[0] * 86400000);
+                    } else {
+                        data = new Date(r[0]);
+                    }
+                    // Normalise to midnight local to avoid timezone edge cases
+                    data = new Date(data.getFullYear(), data.getMonth(), data.getDate());
+                    return {
+                        data,
+                        vehicleId: parseInt(r[1]),
+                        time: (r[2] || '').toString().trim(),
+                        nome: (r[3] || '').toString().trim(),
+                        totalMotorista: parseFloat(r[9]) || 0
+                    };
+                }).filter(r => !isNaN(r.vehicleId));
+
                 alert(`✅ Recebível importado: ${recebivelData.length} registros`);
             } catch(e) {
                 console.error(e);
@@ -1183,8 +1201,11 @@
         }
 
         function getValorDevidoPorPeriodo(vehicleId, dataInicio, dataFim) {
+            // Normalise bounds to midnight local for fair comparison
+            const ini = new Date(dataInicio.getFullYear(), dataInicio.getMonth(), dataInicio.getDate());
+            const fim = new Date(dataFim.getFullYear(), dataFim.getMonth(), dataFim.getDate());
             return recebivelData
-                .filter(r => r.vehicleId === vehicleId && r.data >= dataInicio && r.data <= dataFim)
+                .filter(r => r.vehicleId === vehicleId && r.data >= ini && r.data <= fim)
                 .reduce((sum, r) => sum + r.totalMotorista, 0);
         }
 
@@ -2638,23 +2659,11 @@
             const fmtMoney   = (v) => (v||0).toLocaleString('pt-BR', {style:'currency', currency:'BRL'});
             const fmtPct     = (v) => v === null ? '-' : `${v > 0 ? '+' : ''}${v.toFixed(1)}%`;
 
-            // Filtrar notas pelo período de emissão e time
-            const notasFiltradas = extractedResults.filter(r => {
-                // Filtro de time — computa dinamicamente sem depender de _times
-                if (timeF) {
-                    const timesNota = getTimesNota(r);
-                    if (!timesNota.includes(timeF)) return false;
-                }
-                // Filtro de data — aceita DD/MM/YYYY ou YYYY-MM-DD
-                if (!r.dataEmissao) return false;
-                let d;
-                const ptBR = r.dataEmissao.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
-                const iso  = r.dataEmissao.match(/^(\d{4})-(\d{2})-(\d{2})/);
-                if (ptBR)      d = new Date(`${ptBR[3]}-${ptBR[2]}-${ptBR[1]}T12:00:00`);
-                else if (iso)  d = new Date(`${iso[1]}-${iso[2]}-${iso[3]}T12:00:00`);
-                else return false;
-                return !isNaN(d) && d >= dataInicio && d <= dataFim;
-            });
+            // O período filtra o RECEBÍVEL (qual quinzena somar), NÃO as notas.
+            // Notas são filtradas apenas por time (se selecionado).
+            const notasFiltradas = timeF
+                ? extractedResults.filter(r => getTimesNota(r).includes(timeF))
+                : [...extractedResults];
 
             let ok = 0, divergente = 0, semDados = 0;
             const tbody = document.getElementById('concilBody');
@@ -2706,12 +2715,14 @@
                         ? (diff > 0 ? 'text-red-600 font-semibold' : 'text-orange-600 font-semibold')
                         : 'text-green-600';
 
+                const dataEmissaoDisplay = nota.dataEmissao || '-';
                 const tr = document.createElement('tr');
                 tr.className = 'hover:bg-gray-50 transition-colors';
                 tr.innerHTML = `
                     <td class="px-3 py-2 truncate max-w-[130px]" title="${nota.arquivo}">${nota.arquivo}</td>
                     <td class="px-3 py-2 text-gray-700 truncate max-w-[120px]">${respNome}</td>
                     <td class="px-3 py-2 text-gray-600 truncate max-w-[160px]" title="${nomesMotoristas}">${nomesMotoristas}</td>
+                    <td class="px-3 py-2 text-center text-gray-500 text-[11px]">${dataEmissaoDisplay}</td>
                     <td class="px-3 py-2 text-right font-mono">${fmtMoney(valorNota)}</td>
                     <td class="px-3 py-2 text-right font-mono">${temDados ? fmtMoney(valorDevido) : '-'}</td>
                     <td class="px-3 py-2 text-right font-mono ${diffColor}">${diff !== null ? fmtMoney(diff) : '-'}</td>
