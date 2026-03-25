@@ -83,7 +83,7 @@
                         <h1 class="text-xl md:text-2xl font-bold text-white tracking-tight">
                             Gestor de Pagamentos
                         </h1>
-                        <p class="text-white/90 text-xs md:text-sm font-medium">Extrator NFSe • v49.0</p>
+                        <p class="text-white/90 text-xs md:text-sm font-medium">Extrator NFSe • v51.0</p>
                     </div>
                 </div>
                 
@@ -114,6 +114,10 @@
                 <button onclick="togglePrestadoresModal()" 
                     class="flex items-center gap-2 bg-frexco hover:bg-frexco-dark text-white px-4 py-2.5 rounded-xl font-semibold shadow-sm transition-all-smooth text-sm hover:shadow-md">
                     <i data-lucide="users" class="w-4 h-4"></i> Prestadores (<span id="prestadoresCount">0</span>)
+                </button>
+                <button onclick="toggleConciliacaoModal()"
+                    class="flex items-center gap-2 bg-gray-700 hover:bg-gray-800 text-white px-4 py-2.5 rounded-xl font-semibold shadow-sm transition-all-smooth text-sm hover:shadow-md">
+                    <i data-lucide="bar-chart-2" class="w-4 h-4"></i> Conciliação
                 </button>
                 <button id="btnExport" onclick="exportToExcel()" disabled 
                     class="hidden flex items-center gap-2 bg-gray-700 hover:bg-gray-800 text-white px-4 py-2.5 rounded-xl font-semibold shadow-sm transition-all-smooth text-sm hover:shadow-md disabled:opacity-50">
@@ -208,10 +212,25 @@
 
             <div class="lg:col-span-9">
                 <div class="bg-white rounded-xl shadow-sm border border-gray-200 min-h-[500px] flex flex-col">
+                    <!-- Barra de filtro + ações em massa -->
+                    <div class="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-gray-100 bg-gray-50/50">
+                        <select id="filtroTime" onchange="aplicarFiltroTime()" class="text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-frexco/40 focus:border-frexco outline-none bg-white">
+                            <option value="">Todos os times</option>
+                        </select>
+                        <div id="notasSelecaoBar" class="hidden flex items-center gap-2 ml-auto">
+                            <span class="text-xs text-gray-600"><span id="notasSelCount">0</span> selecionada(s)</span>
+                            <button onclick="excluirNotasSelecionadas()" class="flex items-center gap-1.5 bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition-all">
+                                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Excluir selecionadas
+                            </button>
+                        </div>
+                    </div>
                     <div class="overflow-x-auto">
                         <table class="w-full text-left border-collapse">
                             <thead>
                                 <tr class="bg-primary/10 text-gray-700 text-[10px] font-bold uppercase whitespace-nowrap">
+                                    <th class="px-3 py-3 w-8">
+                                        <input type="checkbox" id="selectAllNotas" onchange="toggleSelectAllNotas(this.checked)" class="w-4 h-4 accent-frexco cursor-pointer">
+                                    </th>
                                     <th class="px-3 py-3">
                                         <button onclick="sortTable('arquivo')" class="flex items-center gap-1 hover:text-primary transition-colors">
                                             Arquivo
@@ -364,6 +383,105 @@
         </div>
     </div>
 
+    <!-- Modal: Conciliação -->
+    <div id="conciliacaoModal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[92vh] overflow-hidden flex flex-col">
+            <!-- Header -->
+            <div class="bg-gray-800 px-6 py-4 flex items-center justify-between flex-shrink-0">
+                <div class="flex items-center gap-3">
+                    <i data-lucide="bar-chart-2" class="w-6 h-6 text-white"></i>
+                    <div>
+                        <h2 class="text-xl font-bold text-white">Conciliação de Valores</h2>
+                        <p class="text-white/60 text-xs">Compare o valor das notas com o valor devido por motorista</p>
+                    </div>
+                </div>
+                <button onclick="toggleConciliacaoModal()" class="text-white/70 hover:text-white transition-colors">
+                    <i data-lucide="x" class="w-6 h-6"></i>
+                </button>
+            </div>
+
+            <!-- Toolbar -->
+            <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50 flex flex-wrap gap-3 items-end flex-shrink-0">
+                <!-- Período -->
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">Data Início</label>
+                    <input type="date" id="concilDataInicio" class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-gray-400 outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">Data Fim</label>
+                    <input type="date" id="concilDataFim" class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-gray-400 outline-none">
+                </div>
+                <!-- Filtro time -->
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">Time</label>
+                    <select id="concilFiltroTime" class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-gray-400 outline-none bg-white">
+                        <option value="">Todos</option>
+                    </select>
+                </div>
+                <!-- Tolerância -->
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">Tolerância (R$)</label>
+                    <input type="number" id="concilTolerancia" value="0" min="0" step="0.01"
+                        class="w-28 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-gray-400 outline-none">
+                </div>
+                <div class="flex gap-2 items-end">
+                    <button onclick="document.getElementById('recebivelInput').click()" class="flex items-center gap-2 bg-white hover:bg-gray-50 border border-gray-300 text-gray-700 px-3 py-2 rounded-lg text-sm font-semibold transition-all">
+                        <i data-lucide="upload" class="w-4 h-4 text-blue-600"></i> Importar Recebível
+                    </button>
+                    <input type="file" id="recebivelInput" accept=".xlsx" class="hidden">
+                    <button onclick="executarConciliacao()" class="flex items-center gap-2 bg-gray-800 hover:bg-gray-900 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all shadow-sm">
+                        <i data-lucide="play" class="w-4 h-4"></i> Conciliar
+                    </button>
+                </div>
+                <!-- Status recebível -->
+                <div id="recebivelStatus" class="text-xs text-gray-500 italic self-end pb-2"></div>
+            </div>
+
+            <!-- Cards de resumo -->
+            <div id="concilCardsArea" class="hidden px-6 pt-4 pb-2 grid grid-cols-2 md:grid-cols-4 gap-3 flex-shrink-0">
+                <div class="bg-gray-50 rounded-xl p-3 border border-gray-200 text-center">
+                    <div class="text-xs text-gray-500 mb-1">Notas analisadas</div>
+                    <div class="text-2xl font-bold text-gray-800" id="concilTotalNotas">0</div>
+                </div>
+                <div class="bg-green-50 rounded-xl p-3 border border-green-200 text-center">
+                    <div class="text-xs text-green-700 mb-1">✅ Sem divergência</div>
+                    <div class="text-2xl font-bold text-green-700" id="concilOk">0</div>
+                </div>
+                <div class="bg-yellow-50 rounded-xl p-3 border border-yellow-200 text-center">
+                    <div class="text-xs text-yellow-700 mb-1">⚠️ Com divergência</div>
+                    <div class="text-2xl font-bold text-yellow-700" id="concilDivergente">0</div>
+                </div>
+                <div class="bg-red-50 rounded-xl p-3 border border-red-200 text-center">
+                    <div class="text-xs text-red-700 mb-1">❌ Sem dados</div>
+                    <div class="text-2xl font-bold text-red-700" id="concilSemDados">0</div>
+                </div>
+            </div>
+
+            <!-- Tabela -->
+            <div class="flex-1 overflow-auto px-6 pb-6">
+                <div id="concilPlaceholder" class="flex flex-col items-center justify-center h-64 text-gray-400">
+                    <i data-lucide="bar-chart-2" class="w-12 h-12 mb-3 opacity-30"></i>
+                    <p class="text-sm">Importe o recebível, defina o período e clique em Conciliar</p>
+                </div>
+                <table id="concilTabela" class="hidden w-full text-left border-collapse text-xs">
+                    <thead>
+                        <tr class="bg-gray-100 text-gray-600 font-bold uppercase whitespace-nowrap sticky top-0">
+                            <th class="px-3 py-2">Arquivo</th>
+                            <th class="px-3 py-2">Responsável</th>
+                            <th class="px-3 py-2">Motoristas</th>
+                            <th class="px-3 py-2 text-right">Valor Nota (R$)</th>
+                            <th class="px-3 py-2 text-right">Valor Devido (R$)</th>
+                            <th class="px-3 py-2 text-right">Diferença (R$)</th>
+                            <th class="px-3 py-2 text-right">Dif %</th>
+                            <th class="px-3 py-2 text-center">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="concilBody" class="divide-y divide-gray-100"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
     <!-- Modal: Editar Motoristas na Nota -->
     <div id="motoristasNotaModal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
         <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md">
@@ -401,38 +519,31 @@
         let extractedResults = [];
         let isProcessing = false;
 
-        const STORAGE_KEY = 'frexco_nfse_results';
+        // Notas persistidas exclusivamente no SharePoint.
+        // saveResultsToStorage é mantido como no-op para não quebrar chamadas existentes.
+        function saveResultsToStorage() { /* no-op — SharePoint é a fonte de verdade */ }
 
-        function saveResultsToStorage() {
-            try {
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(extractedResults));
-            } catch(e) {
-                console.warn('Não foi possível salvar no localStorage:', e);
-            }
-        }
+        function loadResultsFromStorage() { /* no-op — notas carregadas via loadNotasFromSharePoint */ }
 
-        function loadResultsFromStorage() {
-            try {
-                const raw = localStorage.getItem(STORAGE_KEY);
-                if (!raw) return;
-                const saved = JSON.parse(raw);
-                if (!Array.isArray(saved) || saved.length === 0) return;
-                extractedResults = saved;
-                saved.forEach(row => renderRow(row));
-                updateCoverageStats();
-                document.getElementById('btnExport').classList.remove('hidden');
-                document.getElementById('btnExport').disabled = false;
-                console.log(`✅ ${saved.length} nota(s) restauradas do armazenamento local.`);
-            } catch(e) {
-                console.warn('Erro ao carregar resultados salvos:', e);
-            }
-        }
-
-        function clearResults() {
+        async function clearResults() {
             if (extractedResults.length === 0) return;
-            if (!confirm(`Apagar ${extractedResults.length} nota(s) salva(s)? Esta ação não pode ser desfeita.`)) return;
+            if (!confirm(`Apagar ${extractedResults.length} nota(s)? Esta ação não pode ser desfeita.`)) return;
+
+            // Deletar arquivos individuais no SharePoint
+            if (useSharePoint) {
+                for (const nota of extractedResults) {
+                    if (nota._spFileName) {
+                        try {
+                            await fetch(
+                                `https://graph.microsoft.com/v1.0/sites/${SP_SITE_ID}/drive/special/approot:/${nota._spFileName}`,
+                                { method: 'DELETE', headers: { 'Authorization': `Bearer ${spAccessToken}` } }
+                            );
+                        } catch(e) { console.error('Erro ao deletar nota SP:', e); }
+                    }
+                }
+            }
+
             extractedResults = [];
-            localStorage.removeItem(STORAGE_KEY);
             document.getElementById('resultsBody').innerHTML = '';
             document.getElementById('btnExport').classList.add('hidden');
             document.getElementById('btnExport').disabled = true;
@@ -1127,6 +1238,7 @@
                 const tbody = document.getElementById('resultsBody');
                 tbody.innerHTML = '';
                 extractedResults.forEach(r => renderRow(r));
+                atualizarOpcoesTime();
                 updateCoverageStats();
                 saveResultsToStorage();
                 console.log(`✅ ${notas.length} notas carregadas do SharePoint`);
@@ -1447,8 +1559,123 @@
         }
         
 
+        // ========================================
+        // FILTRO POR TIME
+        // ========================================
+
+        let _filtroTimeAtivo = '';
+
+        function getNotasFiltradas() {
+            if (!_filtroTimeAtivo) return extractedResults;
+            return extractedResults.filter(r =>
+                (r._times || []).includes(_filtroTimeAtivo) ||
+                // fallback: deriva o time em tempo real se _times ainda não populado
+                (r.motoristasNaNota || (r.responsavel ? [r.responsavel] : []))
+                    .some(m => {
+                        const p = findPrestadorByVehicleId(m.vehicleId);
+                        return p?.time === _filtroTimeAtivo;
+                    })
+            );
+        }
+
+        function atualizarOpcoesTime() {
+            const select = document.getElementById('filtroTime');
+            const anterior = select.value;
+            // Coletar todos os times das notas
+            const times = new Set();
+            extractedResults.forEach(r => {
+                (r._times || []).forEach(t => { if (t) times.add(t); });
+            });
+            // Reconstruir opções
+            select.innerHTML = '<option value="">Todos os times</option>';
+            [...times].sort().forEach(t => {
+                const opt = document.createElement('option');
+                opt.value = t; opt.textContent = t;
+                if (t === anterior) opt.selected = true;
+                select.appendChild(opt);
+            });
+        }
+
+        function aplicarFiltroTime() {
+            _filtroTimeAtivo = document.getElementById('filtroTime').value;
+            const tbody = document.getElementById('resultsBody');
+            tbody.innerHTML = '';
+            const filtradas = getNotasFiltradas();
+            filtradas.forEach(r => renderRow(r));
+            updateCoverageStats();
+            resetNotasSelecao();
+        }
+
+        // ========================================
+        // SELEÇÃO + EXCLUSÃO DE NOTAS
+        // ========================================
+
+        function onNotaCheckChange() {
+            const checked = document.querySelectorAll('.nota-checkbox:checked');
+            const all = document.querySelectorAll('.nota-checkbox');
+            const selAll = document.getElementById('selectAllNotas');
+            selAll.checked = all.length > 0 && checked.length === all.length;
+            selAll.indeterminate = checked.length > 0 && checked.length < all.length;
+            const bar = document.getElementById('notasSelecaoBar');
+            if (checked.length > 0) {
+                bar.classList.remove('hidden'); bar.classList.add('flex');
+                document.getElementById('notasSelCount').textContent = checked.length;
+            } else {
+                bar.classList.add('hidden'); bar.classList.remove('flex');
+            }
+        }
+
+        function toggleSelectAllNotas(checked) {
+            document.querySelectorAll('.nota-checkbox').forEach(cb => cb.checked = checked);
+            onNotaCheckChange();
+        }
+
+        function resetNotasSelecao() {
+            document.querySelectorAll('.nota-checkbox').forEach(cb => cb.checked = false);
+            const selAll = document.getElementById('selectAllNotas');
+            if (selAll) { selAll.checked = false; selAll.indeterminate = false; }
+            const bar = document.getElementById('notasSelecaoBar');
+            bar.classList.add('hidden'); bar.classList.remove('flex');
+        }
+
+        async function excluirNotasSelecionadas() {
+            const checked = document.querySelectorAll('.nota-checkbox:checked');
+            if (!checked.length) return;
+            if (!confirm(`Excluir ${checked.length} nota(s)? Esta ação não pode ser desfeita.`)) return;
+
+            const indices = Array.from(checked)
+                .map(cb => parseInt(cb.dataset.idx))
+                .sort((a, b) => b - a); // ordem decrescente para não deslocar índices
+
+            for (const idx of indices) {
+                const nota = extractedResults[idx];
+                if (useSharePoint && nota?._spFileName) {
+                    try {
+                        await fetch(
+                            `https://graph.microsoft.com/v1.0/sites/${SP_SITE_ID}/drive/special/approot:/${nota._spFileName}`,
+                            { method: 'DELETE', headers: { 'Authorization': `Bearer ${spAccessToken}` } }
+                        );
+                    } catch(e) { console.error('Erro ao deletar nota SP:', e); }
+                }
+                extractedResults.splice(idx, 1);
+            }
+
+            const tbody = document.getElementById('resultsBody');
+            tbody.innerHTML = '';
+            getNotasFiltradas().forEach(r => renderRow(r));
+            updateCoverageStats();
+            atualizarOpcoesTime();
+            resetNotasSelecao();
+
+            if (extractedResults.length === 0) {
+                document.getElementById('btnExport').classList.add('hidden');
+                document.getElementById('btnExport').disabled = true;
+            }
+        }
+
         function updateCoverageStats() {
             const fmtMoney = (v) => (v || 0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
+            const filtradas = getNotasFiltradas();
 
             if (extractedResults.length === 0) {
                 document.getElementById('statsPanel').classList.add('hidden');
@@ -1458,17 +1685,23 @@
                 return;
             }
 
-            const totalNotas = extractedResults.length;
-            const notasComContrato = extractedResults.filter(r => r.temContrato).length;
-            const percentage = Math.round((notasComContrato / totalNotas) * 100);
+            const totalNotas = filtradas.length;
+            if (totalNotas === 0) {
+                // Filtro ativo sem resultados — esconde cards
+                ['statsPanel','totalLiquidoPanel','totalServicoPanel','pixCoveragePanel']
+                    .forEach(id => document.getElementById(id).classList.add('hidden'));
+                return;
+            }
 
+            const notasComContrato = filtradas.filter(r => r.temContrato).length;
+            const percentage = Math.round((notasComContrato / totalNotas) * 100);
             document.getElementById('statsPanel').classList.remove('hidden');
             document.getElementById('coveragePercent').textContent = `${percentage}%`;
             document.getElementById('coverageText').textContent = `${notasComContrato} de ${totalNotas} com contrato`;
 
-            const totalLiquido = extractedResults.reduce((sum, r) => sum + (r.vLiquido || 0), 0);
-            const totalServico = extractedResults.reduce((sum, r) => sum + (r.vServico || 0), 0);
-            const label = `${totalNotas} nota${totalNotas !== 1 ? 's' : ''}`;
+            const totalLiquido = filtradas.reduce((sum, r) => sum + (r.vLiquido || 0), 0);
+            const totalServico = filtradas.reduce((sum, r) => sum + (r.vServico || 0), 0);
+            const label = `${totalNotas} nota${totalNotas !== 1 ? 's' : ''}${_filtroTimeAtivo ? ` · ${_filtroTimeAtivo}` : ''}`;
 
             document.getElementById('totalLiquidoPanel').classList.remove('hidden');
             document.getElementById('totalLiquidoValue').textContent = fmtMoney(totalLiquido);
@@ -1478,7 +1711,7 @@
             document.getElementById('totalServicoValue').textContent = fmtMoney(totalServico);
             document.getElementById('totalServicoCount').textContent = label;
 
-            const notasComPix = extractedResults.filter(r => r.chavePix && r.chavePix.trim() !== '').length;
+            const notasComPix = filtradas.filter(r => r.chavePix && r.chavePix.trim() !== '').length;
             const pixPct = Math.round((notasComPix / totalNotas) * 100);
             document.getElementById('pixCoveragePanel').classList.remove('hidden');
             document.getElementById('pixCoveragePercent').textContent = `${pixPct}%`;
@@ -1539,7 +1772,7 @@
                 renderRow(result);
             });
 
-            // Atualizar estatísticas
+            atualizarOpcoesTime();
             updateCoverageStats();
             saveResultsToStorage();
 
@@ -1633,6 +1866,7 @@
                     extractedResults.push(data);
                     renderRow(data);
                     saveResultsToStorage();
+                    atualizarOpcoesTime();
                     if (useSharePoint) saveNotaSP(data);
 
                 } catch (e) {
@@ -2102,7 +2336,17 @@
         function renderRow(row) {
             const tr = document.createElement('tr');
             tr.className = "hover:bg-primary/5 transition-colors border-b border-gray-100";
-            if (row._id) tr.dataset.notaId = row._id;
+            const notaIdx = extractedResults.indexOf(row);
+            tr.dataset.notaIdx = notaIdx;
+
+            // Time da nota: derivado dos motoristas associados
+            const times = new Set(
+                (row.motoristasNaNota || (row.responsavel ? [row.responsavel] : []))
+                    .map(m => { const p = findPrestadorByVehicleId(m.vehicleId); return p?.time || ''; })
+                    .filter(Boolean)
+            );
+            row._times = [...times];
+
             const fmtMoney = (v) => v ? v.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}) : 'R$ 0,00';
             const nfColor = row.numeroNF === "?" ? "text-red-600 font-bold" : "text-gray-600";
             const modeloDisplay = row.method === "OCR" ? `OCR - ${row.modelo}` : row.modelo;
@@ -2112,13 +2356,10 @@
                 ? `<span class="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 rounded-md text-xs font-semibold" title="${row.nomeContrato || 'Contrato encontrado'}"><i data-lucide="check-circle" class="w-3 h-3"></i> Sim</span>`
                 : `<span class="inline-flex items-center gap-1 px-2 py-1 bg-red-100 text-red-700 rounded-md text-xs font-semibold"><i data-lucide="x-circle" class="w-3 h-3"></i> Não</span>`;
 
-            // Responsável: prestador resolvido pelo CNPJ da nota
             const responsavelNome = row.responsavel ? row.responsavel.nome : (row.prestador || '-');
             const responsavelCell = `<span class="font-medium text-gray-800 truncate block max-w-[130px]" title="${responsavelNome}">${responsavelNome}</span>`;
 
-            // Motoristas na nota
             const motoristas = row.motoristasNaNota || (row.responsavel ? [row.responsavel] : []);
-            const notaIdx = extractedResults.indexOf(row);
             const motoristasChips = motoristas.length > 0
                 ? motoristas.map(m => `<span class="inline-block bg-blue-50 text-blue-700 border border-blue-200 rounded px-1.5 py-0.5 text-[10px] font-medium truncate max-w-[90px]" title="${m.nome}">${m.nome}</span>`).join('')
                 : `<span class="text-gray-400 text-xs italic">—</span>`;
@@ -2131,6 +2372,9 @@
                 </div>`;
 
             tr.innerHTML = `
+                <td class="px-3 py-2">
+                    <input type="checkbox" class="nota-checkbox w-4 h-4 accent-frexco cursor-pointer" data-idx="${notaIdx}" onchange="onNotaCheckChange()">
+                </td>
                 <td class="px-3 py-2 truncate max-w-[120px]" title="${row.arquivo}">${row.arquivo}</td>
                 <td class="px-3 py-2 max-w-[140px]">${responsavelCell}</td>
                 <td class="px-3 py-2 max-w-[160px]">${motoristasCell}</td>
@@ -2334,13 +2578,141 @@
             }
         }
 
+        // ========================================
+        // CONCILIAÇÃO
+        // ========================================
+
+        function toggleConciliacaoModal() {
+            const modal = document.getElementById('conciliacaoModal');
+            const isHidden = modal.classList.contains('hidden');
+            modal.classList.toggle('hidden');
+            if (isHidden) {
+                // Popular filtro de times
+                const times = new Set();
+                extractedResults.forEach(r => (r._times || []).forEach(t => { if(t) times.add(t); }));
+                const sel = document.getElementById('concilFiltroTime');
+                const anterior = sel.value;
+                sel.innerHTML = '<option value="">Todos</option>';
+                [...times].sort().forEach(t => {
+                    const o = document.createElement('option');
+                    o.value = t; o.textContent = t;
+                    if (t === anterior) o.selected = true;
+                    sel.appendChild(o);
+                });
+                // Datas padrão: mês atual
+                const hoje = new Date();
+                const y = hoje.getFullYear(), m = String(hoje.getMonth()+1).padStart(2,'0');
+                if (!document.getElementById('concilDataInicio').value)
+                    document.getElementById('concilDataInicio').value = `${y}-${m}-01`;
+                if (!document.getElementById('concilDataFim').value)
+                    document.getElementById('concilDataFim').value = `${y}-${m}-${new Date(y, hoje.getMonth()+1, 0).getDate()}`;
+                lucide.createIcons();
+            }
+        }
+
+        // Listener importar recebível
+        document.addEventListener('DOMContentLoaded', () => {
+            const recInput = document.getElementById('recebivelInput');
+            if (recInput) recInput.addEventListener('change', async (e) => {
+                const file = e.target.files[0]; if (!file) return;
+                await importarRecebivelExcel(file);
+                document.getElementById('recebivelStatus').textContent =
+                    `Recebível carregado: ${recebivelData.length} registros`;
+                e.target.value = '';
+            });
+        });
+
+        function executarConciliacao() {
+            const inicio = document.getElementById('concilDataInicio').value;
+            const fim    = document.getElementById('concilDataFim').value;
+            const timeF  = document.getElementById('concilFiltroTime').value;
+            const tolerancia = parseFloat(document.getElementById('concilTolerancia').value) || 0;
+
+            if (!inicio || !fim) { alert('Defina o período de conciliação.'); return; }
+            if (recebivelData.length === 0) { alert('Importe a planilha de recebível primeiro.'); return; }
+
+            const dataInicio = new Date(inicio + 'T00:00:00');
+            const dataFim    = new Date(fim    + 'T23:59:59');
+            const fmtMoney   = (v) => (v||0).toLocaleString('pt-BR', {style:'currency', currency:'BRL'});
+            const fmtPct     = (v) => v === null ? '-' : `${v > 0 ? '+' : ''}${v.toFixed(1)}%`;
+
+            // Filtrar notas pelo período de emissão e time
+            const notasFiltradas = extractedResults.filter(r => {
+                if (timeF && !(r._times||[]).includes(timeF)) return false;
+                if (!r.dataEmissao) return false;
+                const parts = r.dataEmissao.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+                if (!parts) return false;
+                const d = new Date(`${parts[3]}-${parts[2]}-${parts[1]}T12:00:00`);
+                return d >= dataInicio && d <= dataFim;
+            });
+
+            let ok = 0, divergente = 0, semDados = 0;
+            const tbody = document.getElementById('concilBody');
+            tbody.innerHTML = '';
+
+            notasFiltradas.forEach(nota => {
+                const motoristas = nota.motoristasNaNota || (nota.responsavel ? [nota.responsavel] : []);
+                const valorNota  = nota.vLiquido || 0;
+
+                // Somar valor devido de todos os motoristas no período
+                let valorDevido = 0;
+                let temDados = false;
+                motoristas.forEach(m => {
+                    if (!m.vehicleId) return;
+                    const v = getValorDevidoPorPeriodo(m.vehicleId, dataInicio, dataFim);
+                    if (v > 0) { valorDevido += v; temDados = true; }
+                });
+
+                let status, statusClass, diff = null, diffPct = null;
+                if (!temDados || motoristas.length === 0) {
+                    status = '❌ Sem dados'; statusClass = 'bg-red-50 text-red-700'; semDados++;
+                } else {
+                    diff = valorNota - valorDevido;
+                    diffPct = valorDevido !== 0 ? (diff / valorDevido) * 100 : null;
+                    if (Math.abs(diff) <= tolerancia) {
+                        status = '✅ Ok'; statusClass = 'bg-green-50 text-green-700'; ok++;
+                    } else {
+                        status = '⚠️ Divergente'; statusClass = 'bg-yellow-50 text-yellow-700'; divergente++;
+                    }
+                }
+
+                const nomesMotoristas = motoristas.map(m => m.nome).join(', ') || '-';
+                const respNome = nota.responsavel?.nome || nota.prestador || '-';
+                const diffColor = diff === null ? '' : diff > tolerancia ? 'text-red-600 font-semibold' : diff < -tolerancia ? 'text-orange-600 font-semibold' : 'text-green-600';
+
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-gray-50 transition-colors';
+                tr.innerHTML = `
+                    <td class="px-3 py-2 truncate max-w-[130px]" title="${nota.arquivo}">${nota.arquivo}</td>
+                    <td class="px-3 py-2 text-gray-700 truncate max-w-[120px]">${respNome}</td>
+                    <td class="px-3 py-2 text-gray-600 truncate max-w-[160px]" title="${nomesMotoristas}">${nomesMotoristas}</td>
+                    <td class="px-3 py-2 text-right font-mono">${fmtMoney(valorNota)}</td>
+                    <td class="px-3 py-2 text-right font-mono">${temDados ? fmtMoney(valorDevido) : '-'}</td>
+                    <td class="px-3 py-2 text-right font-mono ${diffColor}">${diff !== null ? fmtMoney(diff) : '-'}</td>
+                    <td class="px-3 py-2 text-right ${diffColor}">${fmtPct(diffPct)}</td>
+                    <td class="px-3 py-2 text-center"><span class="px-2 py-0.5 rounded-full text-[10px] font-semibold ${statusClass}">${status}</span></td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            // Atualizar cards
+            document.getElementById('concilCardsArea').classList.remove('hidden');
+            document.getElementById('concilTotalNotas').textContent = notasFiltradas.length;
+            document.getElementById('concilOk').textContent = ok;
+            document.getElementById('concilDivergente').textContent = divergente;
+            document.getElementById('concilSemDados').textContent = semDados;
+
+            document.getElementById('concilPlaceholder').classList.add('hidden');
+            document.getElementById('concilTabela').classList.remove('hidden');
+        }
+
         // Inicialização
         (async function init() {
             try {
                 await initPrestadoresDB();
                 await migrateFromLegacyDBs();
                 await loadPrestadoresLocal();
-                loadResultsFromStorage();
+                // Notas vivem no SharePoint — serão carregadas ao conectar
                 console.log('✅ Sistema inicializado');
             } catch (error) {
                 console.error('Erro ao inicializar:', error);
