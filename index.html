@@ -83,7 +83,7 @@
                         <h1 class="text-xl md:text-2xl font-bold text-white tracking-tight">
                             Gestor de Pagamentos
                         </h1>
-                        <p class="text-white/90 text-xs md:text-sm font-medium">Extrator NFSe • v48.0</p>
+                        <p class="text-white/90 text-xs md:text-sm font-medium">Extrator NFSe • v49.0</p>
                     </div>
                 </div>
                 
@@ -218,6 +218,8 @@
                                             <i data-lucide="arrow-up-down" class="w-3 h-3" id="sort-icon-arquivo"></i>
                                         </button>
                                     </th>
+                                    <th class="px-3 py-3">Responsável</th>
+                                    <th class="px-3 py-3">Motoristas na Nota</th>
                                     <th class="px-3 py-3">Razão Social</th>
                                     <th class="px-3 py-3">CNPJ</th>
                                     <th class="px-3 py-3">
@@ -358,6 +360,38 @@
                 <!-- Inputs ocultos -->
                 <input type="file" id="contratoUploadInput" accept=".pdf" class="hidden">
                 <input type="file" id="prestadorExcelInput" accept=".xlsx" class="hidden">
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Editar Motoristas na Nota -->
+    <div id="motoristasNotaModal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div class="bg-frexco-gradient px-5 py-4 flex items-center justify-between rounded-t-2xl">
+                <div>
+                    <h3 class="text-base font-bold text-white">Motoristas na Nota</h3>
+                    <p class="text-white/70 text-xs truncate" id="motoristasNotaArquivo"></p>
+                </div>
+                <button onclick="fecharMotoristaModal()" class="text-white/80 hover:text-white">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="p-5">
+                <p class="text-xs text-gray-500 mb-3">Selecione os motoristas cujos valores estão incluídos nesta nota.</p>
+                <!-- Selecionados (chips) -->
+                <div id="motoristasNotaSelecionados" class="flex flex-wrap gap-1.5 mb-3 min-h-[28px]"></div>
+                <!-- Busca -->
+                <div class="relative mb-2">
+                    <i data-lucide="search" class="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"></i>
+                    <input type="text" id="motoristasNotaBusca" placeholder="Buscar motorista..." oninput="filtrarMotoristasBusca()"
+                        class="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-frexco/40 focus:border-frexco outline-none">
+                </div>
+                <!-- Lista -->
+                <div id="motoristasNotaLista" class="max-h-52 overflow-y-auto border border-gray-200 rounded-lg divide-y divide-gray-100 text-sm"></div>
+                <div class="flex justify-end gap-2 mt-4">
+                    <button onclick="fecharMotoristaModal()" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-semibold">Cancelar</button>
+                    <button onclick="salvarMotoristasDaNota()" class="px-4 py-2 bg-frexco hover:bg-frexco-dark text-white rounded-lg text-sm font-semibold">Salvar</button>
+                </div>
             </div>
         </div>
     </div>
@@ -1468,12 +1502,22 @@
 
             // Atualizar cada resultado
             extractedResults.forEach(result => {
+                // Atualizar responsável pelo CNPJ
+                const prestadorResp = findPrestadorByCnpj(result.cnpj);
+                result.responsavel = prestadorResp
+                    ? { vehicleId: prestadorResp.vehicleId, nome: prestadorResp.nome }
+                    : null;
+                // Se ainda não tinha motoristas associados, preencher com responsável
+                if ((!result.motoristasNaNota || result.motoristasNaNota.length === 0) && result.responsavel) {
+                    result.motoristasNaNota = [{ ...result.responsavel }];
+                }
+
                 // Re-verificar contrato (CNPJ-first)
                 const contratoAntes = result.temContrato;
                 const contratoMatch = temContrato(result.arquivo, result.cnpj);
                 result.temContrato = contratoMatch.match;
                 result.nomeContrato = contratoMatch.contrato;
-                
+
                 if (!contratoAntes && result.temContrato) {
                     contratosAtualizados++;
                 }
@@ -1481,7 +1525,7 @@
                 // Re-verificar PIX (CNPJ-first)
                 const pixAntes = result.chavePix || '';
                 result.chavePix = findPixByFileName(result.arquivo, result.cnpj);
-                
+
                 if (!pixAntes && result.chavePix) {
                     pixAtualizados++;
                 }
@@ -1567,12 +1611,22 @@
 
                     data.method = method;
                     data.dataExtracao = Date.now();
-                    
+                    data._id = `nota_${Date.now()}_${Math.random().toString(36).substr(2,6)}`;
+
+                    // Responsável — prestador resolvido pelo CNPJ da nota
+                    const prestadorResp = findPrestadorByCnpj(data.cnpj);
+                    data.responsavel = prestadorResp
+                        ? { vehicleId: prestadorResp.vehicleId, nome: prestadorResp.nome }
+                        : null;
+
+                    // Motoristas na nota — padrão = responsável
+                    data.motoristasNaNota = data.responsavel ? [{ ...data.responsavel }] : [];
+
                     // Verifica contrato (CNPJ-first)
                     const contratoMatch = temContrato(file.name, data.cnpj);
                     data.temContrato = contratoMatch.match;
                     data.nomeContrato = contratoMatch.contrato;
-                    
+
                     // Busca chave PIX (CNPJ-first)
                     data.chavePix = findPixByFileName(file.name, data.cnpj);
                     
@@ -2048,20 +2102,39 @@
         function renderRow(row) {
             const tr = document.createElement('tr');
             tr.className = "hover:bg-primary/5 transition-colors border-b border-gray-100";
+            if (row._id) tr.dataset.notaId = row._id;
             const fmtMoney = (v) => v ? v.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}) : 'R$ 0,00';
             const nfColor = row.numeroNF === "?" ? "text-red-600 font-bold" : "text-gray-600";
-            
             const modeloDisplay = row.method === "OCR" ? `OCR - ${row.modelo}` : row.modelo;
             const modeloColor = row.method === "OCR" ? "text-orange-600 font-semibold" : "text-primary font-medium";
 
-            // Indicador de Contrato
-            const contratoIcon = row.temContrato 
-                ? '<span class="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 rounded-md text-xs font-semibold" title="' + (row.nomeContrato || 'Contrato encontrado') + '"><i data-lucide="check-circle" class="w-3 h-3"></i> Sim</span>'
-                : '<span class="inline-flex items-center gap-1 px-2 py-1 bg-red-100 text-red-700 rounded-md text-xs font-semibold"><i data-lucide="x-circle" class="w-3 h-3"></i> Não</span>';
+            const contratoIcon = row.temContrato
+                ? `<span class="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 rounded-md text-xs font-semibold" title="${row.nomeContrato || 'Contrato encontrado'}"><i data-lucide="check-circle" class="w-3 h-3"></i> Sim</span>`
+                : `<span class="inline-flex items-center gap-1 px-2 py-1 bg-red-100 text-red-700 rounded-md text-xs font-semibold"><i data-lucide="x-circle" class="w-3 h-3"></i> Não</span>`;
+
+            // Responsável: prestador resolvido pelo CNPJ da nota
+            const responsavelNome = row.responsavel ? row.responsavel.nome : (row.prestador || '-');
+            const responsavelCell = `<span class="font-medium text-gray-800 truncate block max-w-[130px]" title="${responsavelNome}">${responsavelNome}</span>`;
+
+            // Motoristas na nota
+            const motoristas = row.motoristasNaNota || (row.responsavel ? [row.responsavel] : []);
+            const notaIdx = extractedResults.indexOf(row);
+            const motoristasChips = motoristas.length > 0
+                ? motoristas.map(m => `<span class="inline-block bg-blue-50 text-blue-700 border border-blue-200 rounded px-1.5 py-0.5 text-[10px] font-medium truncate max-w-[90px]" title="${m.nome}">${m.nome}</span>`).join('')
+                : `<span class="text-gray-400 text-xs italic">—</span>`;
+            const motoristasCell = `
+                <div class="flex items-center gap-1 flex-wrap">
+                    ${motoristasChips}
+                    <button onclick="abrirMotoristaModal(${notaIdx})" class="ml-1 p-0.5 text-gray-400 hover:text-frexco rounded transition-colors flex-shrink-0" title="Editar motoristas">
+                        <i data-lucide="edit-2" class="w-3 h-3"></i>
+                    </button>
+                </div>`;
 
             tr.innerHTML = `
                 <td class="px-3 py-2 truncate max-w-[120px]" title="${row.arquivo}">${row.arquivo}</td>
-                <td class="px-3 py-2 truncate max-w-[180px]" title="${row.prestador}">${row.prestador}</td>
+                <td class="px-3 py-2 max-w-[140px]">${responsavelCell}</td>
+                <td class="px-3 py-2 max-w-[160px]">${motoristasCell}</td>
+                <td class="px-3 py-2 truncate max-w-[160px]" title="${row.prestador}">${row.prestador}</td>
                 <td class="px-3 py-2 text-[10px] font-mono text-gray-500">${row.cnpj || '-'}</td>
                 <td class="px-3 py-2 text-gray-600">${fmtMoney(row.vLiquido)}</td>
                 <td class="px-3 py-2 font-bold text-primary">${fmtMoney(row.vServico)}</td>
@@ -2073,6 +2146,126 @@
             `;
             document.getElementById('resultsBody').appendChild(tr);
             lucide.createIcons();
+        }
+
+        // ========================================
+        // MODAL — MOTORISTAS NA NOTA
+        // ========================================
+
+        let _motoristasModalIdx = null;
+        let _motoristasModalSelecionados = []; // [{vehicleId, nome}]
+
+        function abrirMotoristaModal(notaIdx) {
+            _motoristasModalIdx = notaIdx;
+            const nota = extractedResults[notaIdx];
+            document.getElementById('motoristasNotaArquivo').textContent = nota.arquivo || '';
+
+            // Inicializa com os motoristas já associados (ou responsável como default)
+            _motoristasModalSelecionados = nota.motoristasNaNota
+                ? nota.motoristasNaNota.map(m => ({...m}))
+                : (nota.responsavel ? [{ ...nota.responsavel }] : []);
+
+            document.getElementById('motoristasNotaBusca').value = '';
+            renderMotoristasSelecionados();
+            renderMotoristasLista('');
+            document.getElementById('motoristasNotaModal').classList.remove('hidden');
+            document.getElementById('motoristasNotaBusca').focus();
+            lucide.createIcons();
+        }
+
+        function fecharMotoristaModal() {
+            _motoristasModalIdx = null;
+            _motoristasModalSelecionados = [];
+            document.getElementById('motoristasNotaModal').classList.add('hidden');
+        }
+
+        function renderMotoristasSelecionados() {
+            const container = document.getElementById('motoristasNotaSelecionados');
+            if (_motoristasModalSelecionados.length === 0) {
+                container.innerHTML = '<span class="text-xs text-gray-400 italic">Nenhum selecionado</span>';
+                return;
+            }
+            container.innerHTML = _motoristasModalSelecionados.map((m, i) => `
+                <span class="inline-flex items-center gap-1 bg-frexco/10 text-frexco-dark border border-frexco/30 rounded-full px-2 py-0.5 text-xs font-medium">
+                    ${m.nome}
+                    <button onclick="removerMotoristaSelecionado(${i})" class="text-frexco/60 hover:text-red-500 ml-0.5 leading-none">✕</button>
+                </span>
+            `).join('');
+        }
+
+        function removerMotoristaSelecionado(idx) {
+            _motoristasModalSelecionados.splice(idx, 1);
+            renderMotoristasSelecionados();
+            filtrarMotoristasBusca();
+        }
+
+        function filtrarMotoristasBusca() {
+            const q = document.getElementById('motoristasNotaBusca').value;
+            renderMotoristasLista(q);
+        }
+
+        function renderMotoristasLista(query) {
+            const container = document.getElementById('motoristasNotaLista');
+            const q = (query || '').toLowerCase().trim();
+            const selecionadosIds = new Set(_motoristasModalSelecionados.map(m => m.vehicleId));
+
+            const ativos = prestadoresList.filter(p => p.inUse !== false);
+            const filtrados = ativos.filter(p =>
+                (!q || (p.nome || '').toLowerCase().includes(q)) &&
+                !selecionadosIds.has(p.vehicleId)
+            ).slice(0, 50);
+
+            if (filtrados.length === 0) {
+                container.innerHTML = '<p class="text-xs text-gray-400 text-center py-4">Nenhum motorista encontrado</p>';
+                return;
+            }
+            container.innerHTML = filtrados.map(p => `
+                <div onclick="adicionarMotoristaSelecionado(${p.vehicleId}, '${(p.nome||'').replace(/'/g,"\\'")}', this)"
+                    class="flex items-center gap-2 px-3 py-2 hover:bg-frexco/5 cursor-pointer transition-colors">
+                    <span class="font-medium text-gray-800 text-sm flex-1">${p.nome}</span>
+                    ${p.time ? `<span class="text-xs text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">${p.time}</span>` : ''}
+                </div>
+            `).join('');
+        }
+
+        function adicionarMotoristaSelecionado(vehicleId, nome) {
+            if (_motoristasModalSelecionados.some(m => m.vehicleId === vehicleId)) return;
+            _motoristasModalSelecionados.push({ vehicleId, nome });
+            document.getElementById('motoristasNotaBusca').value = '';
+            renderMotoristasSelecionados();
+            renderMotoristasLista('');
+        }
+
+        async function salvarMotoristasDaNota() {
+            if (_motoristasModalIdx === null) return;
+            const nota = extractedResults[_motoristasModalIdx];
+            nota.motoristasNaNota = _motoristasModalSelecionados.map(m => ({...m}));
+
+            // Verificar contrato para todos os motoristas
+            const semContrato = nota.motoristasNaNota.filter(m => {
+                const p = findPrestadorByVehicleId(m.vehicleId);
+                return !p || !p.contrato;
+            });
+            nota.temContrato = semContrato.length === 0 && nota.motoristasNaNota.length > 0;
+            nota.contratoStatus = nota.motoristasNaNota.length === 0 ? 'sem_motoristas'
+                : semContrato.length === 0 ? 'ok'
+                : semContrato.length === nota.motoristasNaNota.length ? 'nenhum'
+                : 'parcial';
+            nota.nomeContrato = nota.motoristasNaNota
+                .map(m => { const p = findPrestadorByVehicleId(m.vehicleId); return p?.contrato?.nomeArquivo || null; })
+                .filter(Boolean).join(', ') || null;
+
+            saveResultsToStorage();
+            if (useSharePoint && nota._spFileName) await saveNotaSP(nota);
+
+            // Re-renderizar linha
+            const tbody = document.getElementById('resultsBody');
+            const rows = tbody.querySelectorAll('tr');
+            tbody.innerHTML = '';
+            extractedResults.forEach(r => renderRow(r));
+
+            updateCoverageStats();
+            fecharMotoristaModal();
         }
 
         function exportToExcel() {
