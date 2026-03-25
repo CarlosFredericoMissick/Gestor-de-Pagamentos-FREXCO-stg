@@ -83,7 +83,7 @@
                         <h1 class="text-xl md:text-2xl font-bold text-white tracking-tight">
                             Gestor de Pagamentos
                         </h1>
-                        <p class="text-white/90 text-xs md:text-sm font-medium">Extrator NFSe • v51.0</p>
+                        <p class="text-white/90 text-xs md:text-sm font-medium">Extrator NFSe • v52.0</p>
                     </div>
                 </div>
                 
@@ -1567,26 +1567,14 @@
 
         function getNotasFiltradas() {
             if (!_filtroTimeAtivo) return extractedResults;
-            return extractedResults.filter(r =>
-                (r._times || []).includes(_filtroTimeAtivo) ||
-                // fallback: deriva o time em tempo real se _times ainda não populado
-                (r.motoristasNaNota || (r.responsavel ? [r.responsavel] : []))
-                    .some(m => {
-                        const p = findPrestadorByVehicleId(m.vehicleId);
-                        return p?.time === _filtroTimeAtivo;
-                    })
-            );
+            return extractedResults.filter(r => getTimesNota(r).includes(_filtroTimeAtivo));
         }
 
         function atualizarOpcoesTime() {
             const select = document.getElementById('filtroTime');
             const anterior = select.value;
-            // Coletar todos os times das notas
             const times = new Set();
-            extractedResults.forEach(r => {
-                (r._times || []).forEach(t => { if (t) times.add(t); });
-            });
-            // Reconstruir opções
+            extractedResults.forEach(r => getTimesNota(r).forEach(t => times.add(t)));
             select.innerHTML = '<option value="">Todos os times</option>';
             [...times].sort().forEach(t => {
                 const opt = document.createElement('option');
@@ -2587,9 +2575,9 @@
             const isHidden = modal.classList.contains('hidden');
             modal.classList.toggle('hidden');
             if (isHidden) {
-                // Popular filtro de times
+                // Popular filtro de times — computa dinamicamente
                 const times = new Set();
-                extractedResults.forEach(r => (r._times || []).forEach(t => { if(t) times.add(t); }));
+                extractedResults.forEach(r => getTimesNota(r).forEach(t => times.add(t)));
                 const sel = document.getElementById('concilFiltroTime');
                 const anterior = sel.value;
                 sel.innerHTML = '<option value="">Todos</option>';
@@ -2622,6 +2610,19 @@
             });
         });
 
+        // Helper: obtém times de uma nota dinamicamente (sem depender de _times)
+        function getTimesNota(nota) {
+            const motoristas = nota.motoristasNaNota
+                || (nota.responsavel ? [nota.responsavel] : []);
+            const times = new Set(
+                motoristas.map(m => {
+                    const p = findPrestadorByVehicleId(m.vehicleId);
+                    return p?.time || '';
+                }).filter(Boolean)
+            );
+            return [...times];
+        }
+
         function executarConciliacao() {
             const inicio = document.getElementById('concilDataInicio').value;
             const fim    = document.getElementById('concilDataFim').value;
@@ -2630,6 +2631,7 @@
 
             if (!inicio || !fim) { alert('Defina o período de conciliação.'); return; }
             if (recebivelData.length === 0) { alert('Importe a planilha de recebível primeiro.'); return; }
+            if (extractedResults.length === 0) { alert('Nenhuma nota carregada. Conecte o SharePoint ou extraia notas primeiro.'); return; }
 
             const dataInicio = new Date(inicio + 'T00:00:00');
             const dataFim    = new Date(fim    + 'T23:59:59');
@@ -2638,12 +2640,20 @@
 
             // Filtrar notas pelo período de emissão e time
             const notasFiltradas = extractedResults.filter(r => {
-                if (timeF && !(r._times||[]).includes(timeF)) return false;
+                // Filtro de time — computa dinamicamente sem depender de _times
+                if (timeF) {
+                    const timesNota = getTimesNota(r);
+                    if (!timesNota.includes(timeF)) return false;
+                }
+                // Filtro de data — aceita DD/MM/YYYY ou YYYY-MM-DD
                 if (!r.dataEmissao) return false;
-                const parts = r.dataEmissao.match(/(\d{2})\/(\d{2})\/(\d{4})/);
-                if (!parts) return false;
-                const d = new Date(`${parts[3]}-${parts[2]}-${parts[1]}T12:00:00`);
-                return d >= dataInicio && d <= dataFim;
+                let d;
+                const ptBR = r.dataEmissao.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+                const iso  = r.dataEmissao.match(/^(\d{4})-(\d{2})-(\d{2})/);
+                if (ptBR)      d = new Date(`${ptBR[3]}-${ptBR[2]}-${ptBR[1]}T12:00:00`);
+                else if (iso)  d = new Date(`${iso[1]}-${iso[2]}-${iso[3]}T12:00:00`);
+                else return false;
+                return !isNaN(d) && d >= dataInicio && d <= dataFim;
             });
 
             let ok = 0, divergente = 0, semDados = 0;
@@ -2651,20 +2661,33 @@
             tbody.innerHTML = '';
 
             notasFiltradas.forEach(nota => {
-                const motoristas = nota.motoristasNaNota || (nota.responsavel ? [nota.responsavel] : []);
-                const valorNota  = nota.vLiquido || 0;
+                // Garantir que motoristasNaNota exista mesmo em notas antigas
+                const motoristas = nota.motoristasNaNota
+                    || (nota.responsavel ? [nota.responsavel] : [])
+                    || [];
+
+                // Se não há motoristas associados, tenta resolver pelo CNPJ em tempo real
+                let motoristasEfetivos = motoristas;
+                if (motoristasEfetivos.length === 0 && nota.cnpj) {
+                    const p = findPrestadorByCnpj(nota.cnpj);
+                    if (p) motoristasEfetivos = [{ vehicleId: p.vehicleId, nome: p.nome }];
+                }
+
+                const valorNota = nota.vLiquido || 0;
 
                 // Somar valor devido de todos os motoristas no período
                 let valorDevido = 0;
                 let temDados = false;
-                motoristas.forEach(m => {
+                motoristasEfetivos.forEach(m => {
                     if (!m.vehicleId) return;
                     const v = getValorDevidoPorPeriodo(m.vehicleId, dataInicio, dataFim);
                     if (v > 0) { valorDevido += v; temDados = true; }
                 });
 
                 let status, statusClass, diff = null, diffPct = null;
-                if (!temDados || motoristas.length === 0) {
+                if (motoristasEfetivos.length === 0) {
+                    status = '❌ Sem motorista'; statusClass = 'bg-red-50 text-red-700'; semDados++;
+                } else if (!temDados) {
                     status = '❌ Sem dados'; statusClass = 'bg-red-50 text-red-700'; semDados++;
                 } else {
                     diff = valorNota - valorDevido;
@@ -2676,9 +2699,12 @@
                     }
                 }
 
-                const nomesMotoristas = motoristas.map(m => m.nome).join(', ') || '-';
+                const nomesMotoristas = motoristasEfetivos.map(m => m.nome).join(', ') || '-';
                 const respNome = nota.responsavel?.nome || nota.prestador || '-';
-                const diffColor = diff === null ? '' : diff > tolerancia ? 'text-red-600 font-semibold' : diff < -tolerancia ? 'text-orange-600 font-semibold' : 'text-green-600';
+                const diffColor = diff === null ? ''
+                    : Math.abs(diff) > tolerancia
+                        ? (diff > 0 ? 'text-red-600 font-semibold' : 'text-orange-600 font-semibold')
+                        : 'text-green-600';
 
                 const tr = document.createElement('tr');
                 tr.className = 'hover:bg-gray-50 transition-colors';
@@ -2701,7 +2727,6 @@
             document.getElementById('concilOk').textContent = ok;
             document.getElementById('concilDivergente').textContent = divergente;
             document.getElementById('concilSemDados').textContent = semDados;
-
             document.getElementById('concilPlaceholder').classList.add('hidden');
             document.getElementById('concilTabela').classList.remove('hidden');
         }
