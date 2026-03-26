@@ -308,6 +308,9 @@
                 <button onclick="downloadAllContratosZip()" class="flex items-center gap-2 bg-white hover:bg-gray-50 border border-gray-300 text-gray-700 px-3 py-2 rounded-lg font-semibold text-sm transition-all">
                     <i data-lucide="archive" class="w-4 h-4"></i> ZIP Contratos
                 </button>
+                <button onclick="limparBasePrestadores()" class="flex items-center gap-2 bg-white hover:bg-red-50 border border-gray-300 hover:border-red-300 text-red-600 px-3 py-2 rounded-lg font-semibold text-sm transition-all" title="Apaga todos os CNPJs, PIX e contratos. Use antes de reimportar para corrigir dados.">
+                    <i data-lucide="alert-triangle" class="w-4 h-4"></i> Limpar Base
+                </button>
                 <div class="flex-1"></div>
                 <button id="btnDeleteSelectedPrestadores" onclick="deleteSelectedPrestadores()" class="hidden flex items-center gap-1.5 bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-lg font-semibold text-sm transition-all shadow-sm">
                     <i data-lucide="trash-2" class="w-4 h-4"></i>
@@ -1319,6 +1322,27 @@
             }
         }
 
+        async function limparBasePrestadores() {
+            const ativos = prestadoresList.filter(p => p.inUse !== false);
+            if (!confirm(`⚠️ Isso apagará os CNPJs, PIX e contratos de ${ativos.length} motoristas.\n\nOs nomes e IDs são preservados.\n\nUse antes de reimportar dados corrigidos.\n\nContinuar?`)) return;
+
+            prestadoresList.forEach(p => {
+                p.cnpjs = [];
+                p.contrato = null;
+            });
+
+            if (useSharePoint) {
+                await savePrestadoresSP_internal();
+                await loadPrestadoresFromSharePoint();
+            } else {
+                for (const p of prestadoresList) {
+                    if (p.id) await savePrestadorLocal(p);
+                }
+                await loadPrestadoresLocal();
+            }
+            reprocessExtractedResults();
+            alert('✅ CNPJs, PIX e contratos apagados.\n\nAgora reimporte a planilha de CNPJs/PIX e os contratos ZIP.');
+        }
         async function excluirRecebivel() {
             if (recebivelData.length === 0) { alert('A base de recebível já está vazia.'); return; }
             if (!confirm(`Excluir a base de recebível (${recebivelData.length} registros)? Esta ação não pode ser desfeita.`)) return;
