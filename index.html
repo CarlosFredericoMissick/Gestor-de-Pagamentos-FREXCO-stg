@@ -618,12 +618,13 @@
         // ========================================
         // PRESTADORES — DADOS UNIFICADOS
         // Estrutura: {
-        //   id, vehicleId, nome, cd, time, inUse,
-        //   cnpjs: [{ cnpj, chavePix }],   ← múltiplos CNPJs por motorista
+        //   id, vehicleId (= driver_id após migração), nome, cd, time, inUse,
+        //   vehicles: [{ vehicleId, nome }],  ← todos os veículos do motorista
+        //   cnpjs: [{ cnpj, chavePix }],
         //   contrato: { nomeArquivo, fileData, dataUpload } | null,
         //   fromSharePoint, dataAdicao
         // }
-        // Regras: CNPJ único global, 1 contrato por motorista
+        // Regras: CNPJ único global, 1 contrato por motorista, 1 registro por driver_id
         // ========================================
 
         let prestadoresDB = null;
@@ -1208,38 +1209,116 @@
                 const idsNaBase = new Set();
                 const rowsValidos = [];
 
-                for (const row of rows) {
-                    let driverId, nome, vehicleId, cdRaw, inUse, time;
+                if (isNovoFormato) {
+                    // Agrupar por driver_id — um único prestador por motorista
+                    const byDriver = {};
+                    for (const row of rows) {
+                        const driverId  = parseInt(row[0]);
+                        const nome      = (row[1] || '').toString().trim();
+                        const vehicleId = row[2] ? parseInt(row[2]) : null;
+                        const veiculo   = (row[3] || '').toString().trim();
+                        const cdRaw     = (row[4] || '').toString().trim();
+                        const inUse     = row[5] === true || row[5] === 'true' || row[5] === 1;
+                        const time      = (row[6] || '').toString().trim();
+                        if (!nome || isNaN(driverId)) continue;
+                        if (cdRaw && CDS_TESTE.includes(cdRaw.toLowerCase())) continue;
 
-                    if (isNovoFormato) {
-                        // FORMATO NOVO: driver_id(0) | nome(1) | vehicle_id(2) | veículo(3) | cd(4) | inUse(5) | time(6)
-                        driverId  = parseInt(row[0]);
-                        nome      = (row[1] || '').toString().trim();
-                        vehicleId = row[2] ? parseInt(row[2]) : null;
-                        cdRaw     = (row[4] || '').toString().trim();
-                        inUse     = row[5] === true || row[5] === 'true' || row[5] === 1;
-                        time      = (row[6] || '').toString().trim();
-                    } else {
-                        // FORMATO ANTIGO: vehicle_id(0) | nome(1) | cd(2) | inUse(3) | time(4)
-                        // Usa vehicle_id como chave (sem driver_id)
-                        driverId  = parseInt(row[0]); // vehicle_id vira o ID de cadastro
-                        nome      = (row[1] || '').toString().trim();
-                        vehicleId = null; // não há coluna de vehicle separada
-                        cdRaw     = (row[2] || '').toString().trim();
-                        inUse     = row[3] === true || row[3] === 'true' || row[3] === 1;
-                        time      = (row[4] || '').toString().trim();
+                        if (!byDriver[driverId]) {
+                            byDriver[driverId] = {
+                                driverId, nome, vehicleId, // primeiro vehicle_id para migração
+                                cd: cdRaw || 'CD Desconhecido', inUse, time,
+                                vehicles: []
+                            };
+                        }
+                        // Armazena todos os veículos do motorista
+                        if (vehicleId) byDriver[driverId].vehicles.push({ vehicleId, nome: veiculo || nome });
                     }
-
-                    if (!nome || isNaN(driverId)) continue;
-                    if (cdRaw && CDS_TESTE.includes(cdRaw.toLowerCase())) continue;
-                    const cd = cdRaw || 'CD Desconhecido';
-                    idsNaBase.add(driverId);
-                    rowsValidos.push({ driverId, nome, vehicleId, cd, inUse, time });
+                    for (const entry of Object.values(byDriver)) {
+                        idsNaBase.add(entry.driverId);
+                        rowsValidos.push(entry);
+                    }
+                } else {
+                    // Formato antigo: um registro por linha, vehicleId = chave
+                    for (const row of rows) {
+                        const driverId  = parseInt(row[0]);
+                        const nome      = (row[1] || '').toString().trim();
+                        const cdRaw     = (row[2] || '').toString().trim();
+                        const inUse     = row[3] === true || row[3] === 'true' || row[3] === 1;
+                        const time      = (row[4] || '').toString().trim();
+                        if (!nome || isNaN(driverId)) continue;
+                        if (cdRaw && CDS_TESTE.includes(cdRaw.toLowerCase())) continue;
+                        idsNaBase.add(driverId);
+                        rowsValidos.push({ driverId, nome, vehicleId: null, vehicles: [],
+                            cd: cdRaw || 'CD Desconhecido', inUse, time });
+                    }
                 }
 
                 let novos = 0, atualizados = 0, excluidos = 0, migrados = 0;
 
-                // 1. Excluir prestadores que não estão na nova base (preserva manuais M-xxx)
+                // Build lookup: vehicle_id → prestador existente (para migração formato novo)
+                // Snapshot ANTES de qualquer alteração para evitar colisões
+                const snapshotByVehicleId = {};
+                const snapshotByDriverId  = {};
+                prestadoresList.forEach(p => {
+                    if (!p.vehicleId) return;
+                    const id = String(p.vehicleId);
+                    if (id.startsWith('M')) return;
+                    const num = parseInt(id);
+                    snapshotByVehicleId[num] = p;
+                    snapshotByDriverId[num]  = p;
+                });
+
+                // PASSO 1: Migrar / atualizar / criar — usando o snapshot para lookup
+                for (const { driverId, nome, vehicleId, vehicles, cd, inUse, time } of rowsValidos) {
+                    let existente = null;
+
+                    if (isNovoFormato && vehicleId) {
+                        // Migração: busca pelo vehicle_id original no snapshot
+                        existente = snapshotByVehicleId[vehicleId] || null;
+                    }
+                    // Fallback: já existe keyed por driverId (reimportação após migração)
+                    if (!existente) {
+                        const candidato = snapshotByDriverId[driverId];
+                        // Só usa o fallback se o candidato NÃO é um vehicle_id que pertence
+                        // a outra linha da nova base (evita colisão entre vehicle_id e driver_id)
+                        if (candidato && !rowsValidos.some(r => r.vehicleId === driverId && r.driverId !== driverId)) {
+                            existente = candidato;
+                        }
+                    }
+
+                    if (existente) {
+                        const eraVehicleId = isNovoFormato && vehicleId
+                            && parseInt(existente.vehicleId) === vehicleId
+                            && parseInt(existente.vehicleId) !== driverId;
+                        if (eraVehicleId) {
+                            existente.vehicleId = driverId;
+                            migrados++;
+                        } else {
+                            existente.vehicleId = driverId;
+                        }
+                        existente.nome     = nome;
+                        existente.cd       = cd;
+                        existente.inUse    = inUse;
+                        existente.time     = time || existente.time || '';
+                        existente.vehicles = vehicles || existente.vehicles || [];
+                        if (!useSharePoint) await savePrestadorLocal(existente);
+                        atualizados++;
+                    } else {
+                        const novo = {
+                            vehicleId: driverId, nome, cd, time: time || '', inUse,
+                            vehicles: vehicles || [],
+                            cnpjs: [], contrato: null,
+                            fromSharePoint: useSharePoint,
+                            dataAdicao: new Date().toISOString()
+                        };
+                        if (!useSharePoint) { const id = await savePrestadorLocal(novo); novo.id = id; }
+                        prestadoresList.push(novo);
+                        novos++;
+                    }
+                }
+
+                // PASSO 2: Excluir prestadores que não foram atualizados (não estão na nova base)
+                // Após migração, todos os registros válidos já têm vehicleId = driverId da nova base
                 const aExcluir = prestadoresList.filter(p => {
                     if (!p.vehicleId) return false;
                     const id = String(p.vehicleId);
@@ -1257,51 +1336,6 @@
                         if (id.startsWith('M')) return true;
                         return idsNaBase.has(parseInt(id));
                     });
-                }
-
-                // 2. Incluir / atualizar
-                for (const { driverId, nome, vehicleId, cd, inUse, time } of rowsValidos) {
-                    let existente = null;
-
-                    if (isNovoFormato && vehicleId) {
-                        // MIGRAÇÃO: busca pelo vehicle_id antigo E nome tem que bater
-                        const candidato = prestadoresList.find(p => parseInt(p.vehicleId) === vehicleId);
-                        if (candidato) {
-                            existente = candidato;
-                        }
-                    }
-                    // Fallback: busca pelo driverId diretamente (base antiga ou reimportação)
-                    if (!existente) {
-                        existente = prestadoresList.find(p => parseInt(p.vehicleId) === driverId);
-                    }
-
-                    if (existente) {
-                        const eraVehicleId = isNovoFormato && vehicleId
-                            && parseInt(existente.vehicleId) === vehicleId
-                            && parseInt(existente.vehicleId) !== driverId;
-                        if (eraVehicleId) {
-                            existente.vehicleId = driverId;
-                            migrados++;
-                        } else {
-                            existente.vehicleId = driverId;
-                        }
-                        existente.nome  = nome;
-                        existente.cd    = cd;
-                        existente.inUse = inUse;
-                        existente.time  = time || existente.time || '';
-                        if (!useSharePoint) await savePrestadorLocal(existente);
-                        atualizados++;
-                    } else {
-                        const novo = {
-                            vehicleId: driverId, nome, cd, time: time || '', inUse,
-                            cnpjs: [], contrato: null,
-                            fromSharePoint: useSharePoint,
-                            dataAdicao: new Date().toISOString()
-                        };
-                        if (!useSharePoint) { const id = await savePrestadorLocal(novo); novo.id = id; }
-                        prestadoresList.push(novo);
-                        novos++;
-                    }
                 }
 
                 if (useSharePoint) {
@@ -1430,9 +1464,9 @@
         }
 
         function getValorDevidoPorPeriodo(driverId, dataInicio, dataFim) {
-            // driverId = vehicleId no cadastro de prestadores (após migração para driver_id)
             const ini = new Date(dataInicio.getFullYear(), dataInicio.getMonth(), dataInicio.getDate());
             const fim = new Date(dataFim.getFullYear(), dataFim.getMonth(), dataFim.getDate());
+            // O recebível já tem ID Motorista (driver_id) — soma diretamente por driver
             return recebivelData
                 .filter(r => r.driverId === driverId && r.data >= ini && r.data <= fim)
                 .reduce((sum, r) => sum + r.totalMotorista, 0);
