@@ -993,10 +993,10 @@
         function findPrestadorByVehicleId(vehicleId) {
             if (!vehicleId) return null;
             const vid = parseInt(vehicleId);
-            // Busca direta pelo vehicleId principal (= driverId após migração)
+            // Busca direta pelo driverId (campo vehicleId após migração)
             const direto = prestadoresList.find(p => p.vehicleId == vehicleId);
             if (direto) return direto;
-            // Fallback: busca no array vehicles (vehicle_ids antigos associados ao driver)
+            // Fallback: busca no array vehicles para normalização de notas com vehicle_ids antigos
             return prestadoresList.find(p =>
                 Array.isArray(p.vehicles) && p.vehicles.some(v => parseInt(v.vehicleId) === vid)
             ) || null;
@@ -2061,6 +2061,19 @@
                     result.motoristasNaNota = [{ ...result.responsavel }];
                 }
 
+                // Normalizar vehicleIds em motoristasNaNota para o driverId atual
+                // (notas antigas podem ter vehicle_ids obsoletos antes da migração)
+                if (Array.isArray(result.motoristasNaNota)) {
+                    result.motoristasNaNota = result.motoristasNaNota.map(m => {
+                        const p = findPrestadorByVehicleId(m.vehicleId);
+                        if (p && parseInt(p.vehicleId) !== parseInt(m.vehicleId)) {
+                            // vehicle_id antigo — atualiza para driverId
+                            return { vehicleId: p.vehicleId, nome: p.nome };
+                        }
+                        return m;
+                    });
+                }
+
                 // Re-verificar contrato (CNPJ-first)
                 const contratoAntes = result.temContrato;
                 const contratoMatch = temContrato(result.arquivo, result.cnpj);
@@ -3118,16 +3131,12 @@
 
                 const valorNota = nota.vLiquido || 0;
 
-                // Somar valor devido de todos os motoristas no período
-                // Resolve o driverId real via prestador (vehicleId na nota pode ser o vehicle_id antigo)
+                // Somar valor devido por driverId (motoristasNaNota já normalizado com driverIds)
                 let valorDevido = 0;
                 let temDados = false;
                 motoristasEfetivos.forEach(m => {
                     if (!m.vehicleId) return;
-                    // findPrestadorByVehicleId já busca pelo vehicles[] também
-                    const prestador = findPrestadorByVehicleId(m.vehicleId);
-                    const driverIdReal = prestador ? parseInt(prestador.vehicleId) : parseInt(m.vehicleId);
-                    const v = getValorDevidoPorPeriodo(driverIdReal, dataInicio, dataFim);
+                    const v = getValorDevidoPorPeriodo(parseInt(m.vehicleId), dataInicio, dataFim);
                     if (v > 0) { valorDevido += v; temDados = true; }
                 });
 
