@@ -63,6 +63,10 @@
             0%, 100% { opacity: 1; }
             50% { opacity: 0.8; }
         }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .spin { animation: spin 0.8s linear infinite; }
     </style>
 </head>
 <body class="min-h-screen font-sans text-gray-800" style="background: linear-gradient(135deg, #f8fdf5 0%, #f0f9ff 100%);">
@@ -94,10 +98,10 @@
                             <div class="w-2 h-2 bg-white rounded-full badge-connected"></div>
                             <span class="text-white text-sm font-semibold">SharePoint Conectado</span>
                         </div>
-                        <button onclick="refreshSharePoint()" title="Atualizar dados do SharePoint"
+                        <button id="btnAtualizar" onclick="refreshSharePoint()" title="Atualizar dados do SharePoint"
                             class="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 backdrop-blur-sm px-3 py-2 rounded-lg border border-white/30 text-white text-sm font-semibold transition-all">
                             <i data-lucide="refresh-cw" class="w-4 h-4"></i>
-                            Atualizar
+                            <span id="btnAtualizarText">Atualizar</span>
                         </button>
                     </div>
                 </div>
@@ -219,8 +223,9 @@
                         </select>
                         <div id="notasSelecaoBar" class="hidden flex items-center gap-2 ml-auto">
                             <span class="text-xs text-gray-600"><span id="notasSelCount">0</span> selecionada(s)</span>
-                            <button onclick="excluirNotasSelecionadas()" class="flex items-center gap-1.5 bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition-all">
-                                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Excluir selecionadas
+                            <button id="btnExcluirNotas" onclick="excluirNotasSelecionadas()" class="flex items-center gap-1.5 bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition-all">
+                                <svg id="btnExcluirNotasIcon" xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                                <span id="btnExcluirNotasText">Excluir selecionadas</span>
                             </button>
                         </div>
                     </div>
@@ -687,10 +692,32 @@
             lucide.createIcons();
         }
 
+        // Loading helpers
+        function setButtonLoading(btnId, iconId, textId, loadingText) {
+            const btn  = document.getElementById(btnId);
+            const icon = document.getElementById(iconId);
+            const text = document.getElementById(textId);
+            if (btn)  btn.disabled = true;
+            if (icon) icon.classList.add('spin');
+            if (text) text.textContent = loadingText;
+        }
+        function resetButton(btnId, iconId, textId, originalText) {
+            const btn  = document.getElementById(btnId);
+            const icon = document.getElementById(iconId);
+            const text = document.getElementById(textId);
+            if (btn)  btn.disabled = false;
+            if (icon) icon.classList.remove('spin');
+            if (text) text.textContent = originalText;
+        }
+
         async function refreshSharePoint() {
             if (!useSharePoint || !spAccessToken) return;
-            const icon = document.querySelector('[onclick="refreshSharePoint()"] i');
-            if (icon) icon.style.animation = 'spin 1s linear infinite';
+            const btn  = document.getElementById('btnAtualizar');
+            const icon = btn?.querySelector('i');
+            const text = document.getElementById('btnAtualizarText');
+            if (btn)  btn.disabled = true;
+            if (icon) icon.classList.add('spin');
+            if (text) text.textContent = 'Atualizando...';
             try {
                 await loadPrestadoresFromSharePoint();
                 await loadNotasFromSharePoint();
@@ -700,7 +727,9 @@
             } catch(e) {
                 alert('Erro ao atualizar dados do SharePoint.');
             } finally {
-                if (icon) icon.style.animation = '';
+                if (btn)  btn.disabled = false;
+                if (icon) icon.classList.remove('spin');
+                if (text) text.textContent = 'Atualizar';
             }
         }
 
@@ -963,7 +992,14 @@
 
         function findPrestadorByVehicleId(vehicleId) {
             if (!vehicleId) return null;
-            return prestadoresList.find(p => p.vehicleId == vehicleId) || null;
+            const vid = parseInt(vehicleId);
+            // Busca direta pelo vehicleId principal (= driverId após migração)
+            const direto = prestadoresList.find(p => p.vehicleId == vehicleId);
+            if (direto) return direto;
+            // Fallback: busca no array vehicles (vehicle_ids antigos associados ao driver)
+            return prestadoresList.find(p =>
+                Array.isArray(p.vehicles) && p.vehicles.some(v => parseInt(v.vehicleId) === vid)
+            ) || null;
         }
 
         function resolvePrestador(cnpj, fileName) {
@@ -1920,9 +1956,11 @@
             if (!checked.length) return;
             if (!confirm(`Excluir ${checked.length} nota(s)? Esta ação não pode ser desfeita.`)) return;
 
+            setButtonLoading('btnExcluirNotas', 'btnExcluirNotasIcon', 'btnExcluirNotasText', 'Excluindo...');
+
             const indices = Array.from(checked)
                 .map(cb => parseInt(cb.dataset.idx))
-                .sort((a, b) => b - a); // ordem decrescente para não deslocar índices
+                .sort((a, b) => b - a);
 
             for (const idx of indices) {
                 const nota = extractedResults[idx];
@@ -1942,6 +1980,7 @@
             getNotasFiltradas().forEach(r => renderRow(r));
             updateCoverageStats();
             atualizarOpcoesTime();
+            resetButton('btnExcluirNotas', 'btnExcluirNotasIcon', 'btnExcluirNotasText', 'Excluir selecionadas');
             resetNotasSelecao();
 
             if (extractedResults.length === 0) {
@@ -3080,11 +3119,15 @@
                 const valorNota = nota.vLiquido || 0;
 
                 // Somar valor devido de todos os motoristas no período
+                // Resolve o driverId real via prestador (vehicleId na nota pode ser o vehicle_id antigo)
                 let valorDevido = 0;
                 let temDados = false;
                 motoristasEfetivos.forEach(m => {
                     if (!m.vehicleId) return;
-                    const v = getValorDevidoPorPeriodo(m.vehicleId, dataInicio, dataFim);
+                    // findPrestadorByVehicleId já busca pelo vehicles[] também
+                    const prestador = findPrestadorByVehicleId(m.vehicleId);
+                    const driverIdReal = prestador ? parseInt(prestador.vehicleId) : parseInt(m.vehicleId);
+                    const v = getValorDevidoPorPeriodo(driverIdReal, dataInicio, dataFim);
                     if (v > 0) { valorDevido += v; temDados = true; }
                 });
 
