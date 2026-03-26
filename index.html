@@ -1191,20 +1191,42 @@
                 const buf = await file.arrayBuffer();
                 const wb = XLSX.read(buf, { type: 'array' });
                 const ws = wb.Sheets[wb.SheetNames[0]];
-                const rows = XLSX.utils.sheet_to_json(ws, { header: 1 }).slice(1).filter(r => r[0]);
+                const allRows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+                const header = allRows[0] || [];
+                const rows = allRows.slice(1).filter(r => r[0]);
 
-                // Nova estrutura: driver_id(0) | nome(1) | vehicle_id(2) | veículo(3) | cd(4) | inUse(5) | time(6)
+                // Detectar formato pela quantidade de colunas preenchidas no header
+                // FORMATO ANTIGO: ID(0) | Veículo(1) | Distribution Center(2) | In Use(3) | Time(4)  — 5 colunas
+                // FORMATO NOVO:   ID Motorista(0) | Motorista(1) | ID Veículo(2) | Veículo(3) | CD(4) | In Use(5) | Time(6) — 7 colunas
+                const isNovoFormato = header.length >= 7 || (header[2] && header[2].toString().toLowerCase().includes('veículo'));
+                console.log(`📋 Formato detectado: ${isNovoFormato ? 'NOVO (driver_id)' : 'ANTIGO (vehicle_id)'}`);
+
                 const CDS_TESTE = ['cd teste - frexco', 'cd teste - piedade', 'cd teste'];
-
-                const idsNaBase = new Set(); // driver_ids válidos
+                const idsNaBase = new Set();
                 const rowsValidos = [];
+
                 for (const row of rows) {
-                    const driverId  = parseInt(row[0]);
-                    const nome      = (row[1] || '').toString().trim();
-                    const vehicleId = row[2] ? parseInt(row[2]) : null;
-                    const cdRaw     = (row[4] || '').toString().trim();
-                    const inUse     = row[5] === true || row[5] === 'true' || row[5] === 1;
-                    const time      = (row[6] || '').toString().trim();
+                    let driverId, nome, vehicleId, cdRaw, inUse, time;
+
+                    if (isNovoFormato) {
+                        // FORMATO NOVO: driver_id(0) | nome(1) | vehicle_id(2) | veículo(3) | cd(4) | inUse(5) | time(6)
+                        driverId  = parseInt(row[0]);
+                        nome      = (row[1] || '').toString().trim();
+                        vehicleId = row[2] ? parseInt(row[2]) : null;
+                        cdRaw     = (row[4] || '').toString().trim();
+                        inUse     = row[5] === true || row[5] === 'true' || row[5] === 1;
+                        time      = (row[6] || '').toString().trim();
+                    } else {
+                        // FORMATO ANTIGO: vehicle_id(0) | nome(1) | cd(2) | inUse(3) | time(4)
+                        // Usa vehicle_id como chave (sem driver_id)
+                        driverId  = parseInt(row[0]); // vehicle_id vira o ID de cadastro
+                        nome      = (row[1] || '').toString().trim();
+                        vehicleId = null; // não há coluna de vehicle separada
+                        cdRaw     = (row[2] || '').toString().trim();
+                        inUse     = row[3] === true || row[3] === 'true' || row[3] === 1;
+                        time      = (row[4] || '').toString().trim();
+                    }
+
                     if (!nome || isNaN(driverId)) continue;
                     if (cdRaw && CDS_TESTE.includes(cdRaw.toLowerCase())) continue;
                     const cd = cdRaw || 'CD Desconhecido';
@@ -1214,12 +1236,11 @@
 
                 let novos = 0, atualizados = 0, excluidos = 0, migrados = 0;
 
-                // 1. Excluir prestadores cujo driverId não está na nova base
-                //    (ignora registros manuais M-prefixados)
+                // 1. Excluir prestadores que não estão na nova base (preserva manuais M-xxx)
                 const aExcluir = prestadoresList.filter(p => {
                     if (!p.vehicleId) return false;
                     const id = String(p.vehicleId);
-                    if (id.startsWith('M')) return false; // manual, preservar
+                    if (id.startsWith('M')) return false;
                     return !idsNaBase.has(parseInt(id));
                 });
                 for (const p of aExcluir) {
@@ -1235,27 +1256,36 @@
                     });
                 }
 
-                // 2. Incluir / atualizar por driverId
+                // 2. Incluir / atualizar
                 for (const { driverId, nome, vehicleId, cd, inUse, time } of rowsValidos) {
-                    // Busca existente por driverId (novo) ou por vehicleId (migração da base antiga)
-                    let existente = prestadoresList.find(p => parseInt(p.vehicleId) === driverId)
-                        || (vehicleId ? prestadoresList.find(p => parseInt(p.vehicleId) === vehicleId) : null)
-                        || prestadoresList.find(p => normalizeFileName(p.nome) === normalizeFileName(nome));
+                    let existente = null;
+
+                    if (isNovoFormato && vehicleId) {
+                        // MIGRAÇÃO: busca pelo vehicle_id antigo E nome tem que bater
+                        const candidato = prestadoresList.find(p => parseInt(p.vehicleId) === vehicleId);
+                        if (candidato && normalizeFileName(candidato.nome) === normalizeFileName(nome)) {
+                            existente = candidato;
+                        }
+                    }
+                    // Fallback: busca pelo driverId diretamente (base antiga ou reimportação)
+                    if (!existente) {
+                        existente = prestadoresList.find(p => parseInt(p.vehicleId) === driverId);
+                    }
 
                     if (existente) {
-                        const eraVehicleId = vehicleId && parseInt(existente.vehicleId) === vehicleId
+                        const eraVehicleId = isNovoFormato && vehicleId
+                            && parseInt(existente.vehicleId) === vehicleId
                             && parseInt(existente.vehicleId) !== driverId;
                         if (eraVehicleId) {
-                            // MIGRAÇÃO: transfere cnpjs e contrato do registro vehicle_id → driver_id
                             existente.vehicleId = driverId;
                             migrados++;
                         } else {
                             existente.vehicleId = driverId;
                         }
-                        existente.nome   = nome;
-                        existente.cd     = cd;
-                        existente.inUse  = inUse;
-                        existente.time   = time || existente.time || '';
+                        existente.nome  = nome;
+                        existente.cd    = cd;
+                        existente.inUse = inUse;
+                        existente.time  = time || existente.time || '';
                         if (!useSharePoint) await savePrestadorLocal(existente);
                         atualizados++;
                     } else {
@@ -1280,12 +1310,12 @@
                 }
                 reprocessExtractedResults();
 
-                let msg = `✅ Base sincronizada!\n\n${novos} novos\n${atualizados} atualizados\n${excluidos} excluídos`;
-                if (migrados > 0) msg += `\n${migrados} migrado(s) de vehicle_id → driver_id`;
+                let msg = `✅ Base sincronizada! (formato ${isNovoFormato ? 'novo' : 'antigo'})\n\n${novos} novos\n${atualizados} atualizados\n${excluidos} excluídos`;
+                if (migrados > 0) msg += `\n${migrados} migrado(s) para driver_id`;
                 alert(msg);
             } catch(e) {
                 console.error(e);
-                alert('Erro ao processar planilha de motoristas.');
+                alert('Erro ao processar planilha de motoristas: ' + e.message);
             }
         }
 
