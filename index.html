@@ -980,7 +980,9 @@
             if (!cnpj) return null;
             const norm = normalizeCnpj(cnpj);
             if (!norm) return null;
+            // Apenas motoristas EM USO participam do cruzamento por CNPJ
             return prestadoresList.find(p =>
+                p.inUse !== false &&
                 Array.isArray(p.cnpjs) && p.cnpjs.some(c => normalizeCnpj(c.cnpj) === norm)
             ) || null;
         }
@@ -1002,14 +1004,16 @@
             ) || null;
         }
 
-        function resolvePrestador(cnpj, fileName) {
-            return findPrestadorByCnpj(cnpj) || findPrestadorByNome(fileName) || null;
+        function resolvePrestador(cnpj) {
+            // Cruzamento exclusivamente pelo número do CNPJ — sem fallback por nome
+            return findPrestadorByCnpj(cnpj) || null;
         }
 
         function findPixByCnpj(cnpj) {
             if (!cnpj) return '';
             const norm = normalizeCnpj(cnpj);
             for (const p of prestadoresList) {
+                if (p.inUse === false) continue; // apenas motoristas em uso
                 if (!Array.isArray(p.cnpjs)) continue;
                 const entry = p.cnpjs.find(c => normalizeCnpj(c.cnpj) === norm);
                 if (entry) return entry.chavePix || '';
@@ -1024,9 +1028,8 @@
         }
 
         function findPixByFileName(fileName, cnpj) {
-            if (cnpj) { const pix = findPixByCnpj(cnpj); if (pix) return pix; }
-            const p = findPrestadorByNome(fileName);
-            if (p && Array.isArray(p.cnpjs) && p.cnpjs.length > 0) return p.cnpjs[0].chavePix || '';
+            // PIX resolvido exclusivamente pelo CNPJ — sem fallback por nome de arquivo
+            if (cnpj) return findPixByCnpj(cnpj);
             return '';
         }
 
@@ -1093,8 +1096,10 @@
                     // Verificar duplicata de CNPJ global
                     if (cnpj) {
                         const norm = normalizeCnpj(cnpj);
+                        // Verifica duplicata apenas entre motoristas em uso
                         const dono = prestadoresList.find(p =>
                             p !== prestador &&
+                            p.inUse !== false &&
                             Array.isArray(p.cnpjs) && p.cnpjs.some(c => normalizeCnpj(c.cnpj) === norm)
                         );
                         if (dono) {
@@ -1309,17 +1314,13 @@
                     let existente = null;
 
                     if (isNovoFormato && vehicleId) {
-                        // Migração: busca pelo vehicle_id original no snapshot
+                        // Match primário: vehicle_id da planilha (antes da migração)
                         existente = snapshotByVehicleId[vehicleId] || null;
                     }
-                    // Fallback: já existe keyed por driverId (reimportação após migração)
+                    // Match secundário: driver_id via mesmo snapshot
+                    // (pós-migração, vehicleId do registro já foi atualizado para driverId)
                     if (!existente) {
-                        const candidato = snapshotByDriverId[driverId];
-                        // Só usa o fallback se o candidato NÃO é um vehicle_id que pertence
-                        // a outra linha da nova base (evita colisão entre vehicle_id e driver_id)
-                        if (candidato && !rowsValidos.some(r => r.vehicleId === driverId && r.driverId !== driverId)) {
-                            existente = candidato;
-                        }
+                        existente = snapshotByVehicleId[driverId] || null;
                     }
 
                     if (existente) {
@@ -2059,6 +2060,15 @@
                 // Se ainda não tinha motoristas associados, preencher com responsável
                 if ((!result.motoristasNaNota || result.motoristasNaNota.length === 0) && result.responsavel) {
                     result.motoristasNaNota = [{ ...result.responsavel }];
+                }
+                // Se havia exatamente 1 motorista (auto-preenchido) e o CNPJ aponta para outro, corrigir
+                else if (
+                    prestadorResp &&
+                    Array.isArray(result.motoristasNaNota) &&
+                    result.motoristasNaNota.length === 1 &&
+                    String(result.motoristasNaNota[0].vehicleId) !== String(prestadorResp.vehicleId)
+                ) {
+                    result.motoristasNaNota = [{ vehicleId: prestadorResp.vehicleId, nome: prestadorResp.nome }];
                 }
 
                 // Normalizar vehicleIds em motoristasNaNota para o driverId atual
