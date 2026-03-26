@@ -1320,17 +1320,33 @@
 
                         const entry = vehicleIdMap.get(vid);
                         if (entry) {
-                            // Encontrou: migrar vehicleId → driverId e atualizar dados
-                            p.vehicleId = entry.driverId;
-                            p.nome      = entry.nome;
-                            p.cd        = entry.cd;
-                            p.inUse     = entry.inUse;
-                            p.time      = entry.time || p.time || '';
-                            p.vehicles  = entry.vehicles || [];
-                            if (!useSharePoint) await savePrestadorLocal(p);
-                            matchedDriverIds.add(entry.driverId);
-                            atualizados++;
-                            migrados++;
+                            if (matchedDriverIds.has(entry.driverId)) {
+                                // Segundo match para o mesmo driverId → este é um duplicado
+                                // Mesclar CNPJs/contrato no registro primário, se ele não tiver
+                                const primario = prestadoresList.find(
+                                    x => parseInt(x.vehicleId) === entry.driverId
+                                );
+                                if (primario) {
+                                    if ((!primario.cnpjs || !primario.cnpjs.length) && p.cnpjs?.length)
+                                        primario.cnpjs = p.cnpjs;
+                                    if (!primario.contrato && p.contrato)
+                                        primario.contrato = p.contrato;
+                                }
+                                if (!useSharePoint && p.id) await deletePrestadorLocal(p.id);
+                                excluidos++;
+                            } else {
+                                // Primeiro match para este driverId → migrar e atualizar
+                                p.vehicleId = entry.driverId;
+                                p.nome      = entry.nome;
+                                p.cd        = entry.cd;
+                                p.inUse     = entry.inUse;
+                                p.time      = entry.time || p.time || '';
+                                p.vehicles  = entry.vehicles || [];
+                                if (!useSharePoint) await savePrestadorLocal(p);
+                                matchedDriverIds.add(entry.driverId);
+                                atualizados++;
+                                migrados++;
+                            }
                         } else {
                             // vehicleId não existe na nova base: excluir o registro
                             if (!useSharePoint && p.id) await deletePrestadorLocal(p.id);
