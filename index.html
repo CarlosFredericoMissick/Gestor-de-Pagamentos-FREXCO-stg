@@ -920,6 +920,17 @@
 
         function normalizeCnpj(cnpj) { return (cnpj || '').replace(/\D/g, ''); }
 
+        // Gerador de ID sequencial para cadastros manuais
+        function nextManualId() {
+            const manuals = prestadoresList
+                .map(p => String(p.vehicleId || ''))
+                .filter(id => /^M\d+$/.test(id))
+                .map(id => parseInt(id.slice(1)))
+                .filter(n => !isNaN(n));
+            const max = manuals.length > 0 ? Math.max(...manuals) : 0;
+            return 'M' + (max + 1);
+        }
+
         function normalizeFileName(name) {
             return (name || '').toLowerCase().trim()
                 .replace(/\.[^.]+$/, '')
@@ -1498,7 +1509,7 @@
                 if (useSharePoint) { await savePrestadoresSP_internal(); }
                 else { await savePrestadorLocal(p); }
             } else {
-                const manualId = 'M' + Date.now();
+                const manualId = nextManualId();
                 const novo = { vehicleId: manualId, nome, cd: '', time: '', inUse: true, cnpjs, contrato: null, fromSharePoint: useSharePoint, dataAdicao: new Date().toISOString() };
                 if (useSharePoint) { prestadoresList.push(novo); await savePrestadoresSP_internal(); }
                 else { const newId = await savePrestadorLocal(novo); novo.id = newId; prestadoresList.push(novo); }
@@ -1581,13 +1592,15 @@
             const container = document.getElementById('prestadoresListContainer');
             const query = (document.getElementById('prestadoresSearch')?.value || '').toLowerCase().trim();
 
+            const queryDigits = query.replace(/\D/g, '');
             const visiveis = ativos.filter(p =>
                 !query ||
                 (p.nome || '').toLowerCase().includes(query) ||
                 (p.time || '').toLowerCase().includes(query) ||
                 (p.cd || '').toLowerCase().includes(query) ||
-                (p.vehicleId && String(p.vehicleId).includes(query)) ||
-                (Array.isArray(p.cnpjs) && p.cnpjs.some(c => (c.cnpj||'').replace(/\D/g,'').includes(query.replace(/\D/g,''))))
+                (p.vehicleId && String(p.vehicleId).toLowerCase().includes(query)) ||
+                (queryDigits.length > 0 && Array.isArray(p.cnpjs) &&
+                    p.cnpjs.some(c => (c.cnpj||'').replace(/\D/g,'').includes(queryDigits)))
             );
 
             if (ativos.length === 0) {
