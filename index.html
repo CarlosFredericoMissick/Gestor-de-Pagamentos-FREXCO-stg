@@ -83,7 +83,7 @@
                         <h1 class="text-xl md:text-2xl font-bold text-white tracking-tight">
                             Gestor de Pagamentos
                         </h1>
-                        <p class="text-white/90 text-xs md:text-sm font-medium">Extrator NFSe • v53.0</p>
+                        <p class="text-white/90 text-xs md:text-sm font-medium">Extrator NFSe • v54.0</p>
                     </div>
                 </div>
                 
@@ -429,6 +429,9 @@
                         <i data-lucide="upload" class="w-4 h-4 text-blue-600"></i> Importar Recebível
                     </button>
                     <input type="file" id="recebivelInput" accept=".xlsx" class="hidden">
+                    <button onclick="excluirRecebivel()" class="flex items-center gap-2 bg-white hover:bg-red-50 border border-gray-300 hover:border-red-300 text-red-600 px-3 py-2 rounded-lg text-sm font-semibold transition-all" title="Excluir base de recebível">
+                        <i data-lucide="trash-2" class="w-4 h-4"></i> Excluir Base
+                    </button>
                     <button onclick="executarConciliacao()" class="flex items-center gap-2 bg-gray-800 hover:bg-gray-900 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all shadow-sm">
                         <i data-lucide="play" class="w-4 h-4"></i> Conciliar
                     </button>
@@ -479,6 +482,59 @@
                     </thead>
                     <tbody id="concilBody" class="divide-y divide-gray-100"></tbody>
                 </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Editar Nota OCR -->
+    <div id="ocrEditModal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+            <div class="bg-orange-500 px-5 py-4 flex items-center justify-between rounded-t-2xl">
+                <div>
+                    <h3 class="text-base font-bold text-white flex items-center gap-2">
+                        <i data-lucide="edit-3" class="w-4 h-4"></i> Editar Campos — Nota OCR
+                    </h3>
+                    <p class="text-white/70 text-xs truncate mt-0.5" id="ocrEditArquivo"></p>
+                </div>
+                <button onclick="fecharOcrEdit()" class="text-white/80 hover:text-white">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="p-5 space-y-3">
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="col-span-2">
+                        <label class="block text-xs font-semibold text-gray-600 mb-1">Razão Social / Prestador</label>
+                        <input type="text" id="ocrPrestador" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-400 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1">CNPJ</label>
+                        <input type="text" id="ocrCnpj" placeholder="00.000.000/0001-00" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-400 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1">Número NF</label>
+                        <input type="text" id="ocrNumeroNF" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-400 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1">Valor dos Serviços (R$)</label>
+                        <input type="number" id="ocrVServico" step="0.01" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-400 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1">Valor Líquido (R$)</label>
+                        <input type="number" id="ocrVLiquido" step="0.01" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-400 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1">Data de Emissão</label>
+                        <input type="text" id="ocrDataEmissao" placeholder="DD/MM/AAAA" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-400 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1">Modelo</label>
+                        <input type="text" id="ocrModelo" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-400 outline-none">
+                    </div>
+                </div>
+                <div class="flex gap-2 justify-end pt-2">
+                    <button onclick="fecharOcrEdit()" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-semibold">Cancelar</button>
+                    <button onclick="salvarOcrEdit()" class="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-sm font-semibold">Salvar alterações</button>
+                </div>
             </div>
         </div>
     </div>
@@ -611,6 +667,7 @@
                     document.querySelector('#btnSharePoint span').textContent = 'Desconectar';
                     await loadPrestadoresFromSharePoint();
                     await loadNotasFromSharePoint();
+                    await loadRecebivelFromSharePoint();
                     reprocessExtractedResults();
                 } catch (error) {
                     console.error('Erro login SharePoint:', error);
@@ -627,6 +684,7 @@
             try {
                 await loadPrestadoresFromSharePoint();
                 await loadNotasFromSharePoint();
+                await loadRecebivelFromSharePoint();
                 reprocessExtractedResults();
                 console.log('✅ SharePoint atualizado');
             } catch(e) {
@@ -1113,49 +1171,97 @@
 
         async function importarBaseMotoristasExcel(file) {
             try {
-                let novos = 0, atualizados = 0;
+                const buf = await file.arrayBuffer();
+                const wb = XLSX.read(buf, { type: 'array' });
+                const ws = wb.Sheets[wb.SheetNames[0]];
+                const rows = XLSX.utils.sheet_to_json(ws, { header: 1 }).slice(1).filter(r => r[0]);
 
+                const CDS_TESTE = ['cd teste - frexco', 'cd teste - piedade', 'cd teste'];
+
+                // Montar set de vehicleIds válidos da nova base
+                const idsNaBase = new Set();
+                const rowsValidos = [];
                 for (const row of rows) {
                     const vehicleId = parseInt(row[0]);
                     const nome      = (row[1] || '').toString().trim();
                     const cdRaw     = (row[2] || '').toString().trim();
-                    const cd        = CDS_TESTE.includes(cdRaw.toLowerCase()) ? null : (cdRaw || 'CD Desconhecido');
                     const inUse     = row[3] === true || row[3] === 'true' || row[3] === 1;
                     const time      = (row[4] || '').toString().trim();
+                    if (!nome || isNaN(vehicleId)) continue;
+                    if (CDS_TESTE.includes(cdRaw.toLowerCase())) continue;
+                    const cd = cdRaw || 'CD Desconhecido';
+                    idsNaBase.add(vehicleId);
+                    rowsValidos.push({ vehicleId, nome, cd, inUse, time });
+                }
 
-                    if (!nome || cd === null) continue;
+                let novos = 0, atualizados = 0, excluidos = 0;
 
+                // 1. Excluir motoristas que não aparecem na nova base
+                const aExcluir = prestadoresList.filter(p => p.vehicleId && !idsNaBase.has(p.vehicleId));
+                for (const p of aExcluir) {
+                    if (!useSharePoint && p.id) await deletePrestadorLocal(p.id);
+                    excluidos++;
+                }
+                if (aExcluir.length > 0) {
+                    prestadoresList = prestadoresList.filter(p => !p.vehicleId || idsNaBase.has(p.vehicleId));
+                }
+
+                // 2. Incluir novos / atualizar existentes — preservando cnpjs e contrato
+                for (const { vehicleId, nome, cd, inUse, time } of rowsValidos) {
                     let existente = findPrestadorByVehicleId(vehicleId)
                         || prestadoresList.find(p => normalizeFileName(p.nome) === normalizeFileName(nome));
 
                     if (existente) {
+                        // Atualiza dados cadastrais, PRESERVA cnpjs e contrato
                         existente.vehicleId = vehicleId;
-                        existente.nome = nome;
-                        existente.cd = cd;
-                        existente.inUse = inUse;
-                        existente.time = time || existente.time || '';
+                        existente.nome      = nome;
+                        existente.cd        = cd;
+                        existente.inUse     = inUse;
+                        existente.time      = time || existente.time || '';
                         if (!useSharePoint) await savePrestadorLocal(existente);
                         atualizados++;
                     } else {
                         const novo = {
                             vehicleId, nome, cd, time: time || '', inUse,
-                            cnpjs: [], contrato: null, fromSharePoint: useSharePoint,
+                            cnpjs: [], contrato: null,
+                            fromSharePoint: useSharePoint,
                             dataAdicao: new Date().toISOString()
                         };
-                        if (!useSharePoint) { const newId = await savePrestadorLocal(novo); novo.id = newId; }
+                        if (!useSharePoint) { const id = await savePrestadorLocal(novo); novo.id = id; }
                         prestadoresList.push(novo);
                         novos++;
                     }
                 }
 
-                if (useSharePoint) { sortPrestadores(); await savePrestadoresSP_internal(); await loadPrestadoresFromSharePoint(); }
-                else { await loadPrestadoresLocal(); }
+                if (useSharePoint) {
+                    sortPrestadores();
+                    await savePrestadoresSP_internal();
+                    await loadPrestadoresFromSharePoint();
+                } else {
+                    await loadPrestadoresLocal();
+                }
                 reprocessExtractedResults();
-                alert(`✅ Base importada!\n\n${novos} novos motoristas\n${atualizados} atualizados`);
+                alert(`✅ Base sincronizada!\n\n${novos} novos\n${atualizados} atualizados\n${excluidos} excluídos`);
             } catch(e) {
                 console.error(e);
                 alert('Erro ao processar planilha de motoristas.');
             }
+        }
+
+        async function excluirRecebivel() {
+            if (recebivelData.length === 0) { alert('A base de recebível já está vazia.'); return; }
+            if (!confirm(`Excluir a base de recebível (${recebivelData.length} registros)? Esta ação não pode ser desfeita.`)) return;
+            recebivelData = [];
+            document.getElementById('recebivelStatus').textContent = '';
+            if (useSharePoint) {
+                try {
+                    await fetch(
+                        `https://graph.microsoft.com/v1.0/sites/${SP_SITE_ID}/drive/special/approot:/recebivel.json`,
+                        { method: 'DELETE', headers: { 'Authorization': `Bearer ${spAccessToken}` } }
+                    );
+                } catch(e) { console.error('Erro ao excluir recebível SP:', e); }
+            }
+            alert('✅ Base de recebível excluída.');
         }
 
         // ========================================
@@ -1175,14 +1281,11 @@
                     if (r[0] instanceof Date) {
                         data = r[0];
                     } else if (typeof r[0] === 'number') {
-                        // Excel serial date — XLSX with cellDates:true should handle this,
-                        // but just in case: convert manually
                         const epoch = new Date(Date.UTC(1899, 11, 30));
                         data = new Date(epoch.getTime() + r[0] * 86400000);
                     } else {
                         data = new Date(r[0]);
                     }
-                    // Normalise to midnight local to avoid timezone edge cases
                     data = new Date(data.getFullYear(), data.getMonth(), data.getDate());
                     return {
                         data,
@@ -1193,11 +1296,40 @@
                     };
                 }).filter(r => !isNaN(r.vehicleId));
 
+                // Salvar no SharePoint como JSON (datas serializadas como ISO)
+                if (useSharePoint) {
+                    const toSave = recebivelData.map(r => ({...r, data: r.data.toISOString()}));
+                    const body = JSON.stringify({ recebivel: toSave, lastUpdate: new Date().toISOString() }, null, 2);
+                    fetch(
+                        `https://graph.microsoft.com/v1.0/sites/${SP_SITE_ID}/drive/special/approot:/recebivel.json:/content`,
+                        { method: 'PUT', headers: { 'Authorization': `Bearer ${spAccessToken}`, 'Content-Type': 'application/json' }, body }
+                    ).then(() => console.log('✅ Recebível salvo no SharePoint'));
+                }
+
                 alert(`✅ Recebível importado: ${recebivelData.length} registros`);
             } catch(e) {
                 console.error(e);
                 alert('Erro ao processar planilha de recebível.');
             }
+        }
+
+        async function loadRecebivelFromSharePoint() {
+            if (!spAccessToken) return;
+            try {
+                const resp = await fetch(
+                    `https://graph.microsoft.com/v1.0/sites/${SP_SITE_ID}/drive/special/approot:/recebivel.json:/content`,
+                    { headers: { 'Authorization': `Bearer ${spAccessToken}` } }
+                );
+                if (!resp.ok) return; // arquivo não existe ainda
+                const data = await resp.json();
+                recebivelData = (data.recebivel || []).map(r => ({
+                    ...r,
+                    data: new Date(r.data)
+                }));
+                console.log(`✅ Recebível SP: ${recebivelData.length} registros`);
+                document.getElementById('recebivelStatus').textContent =
+                    `Recebível carregado: ${recebivelData.length} registros`;
+            } catch(e) { console.error('Erro ao carregar recebível SP:', e); }
         }
 
         function getValorDevidoPorPeriodo(vehicleId, dataInicio, dataFim) {
@@ -2360,6 +2492,9 @@
             const nfColor = row.numeroNF === "?" ? "text-red-600 font-bold" : "text-gray-600";
             const modeloDisplay = row.method === "OCR" ? `OCR - ${row.modelo}` : row.modelo;
             const modeloColor = row.method === "OCR" ? "text-orange-600 font-semibold" : "text-primary font-medium";
+            const ocrEditBtn = row.method === "OCR"
+                ? `<button onclick="abrirOcrEdit(${notaIdx})" class="ml-1 p-0.5 text-orange-500 hover:text-orange-700 rounded transition-colors flex-shrink-0" title="Editar campos OCR"><i data-lucide="edit-3" class="w-3 h-3"></i></button>`
+                : '';
 
             const contratoIcon = row.temContrato
                 ? `<span class="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 rounded-md text-xs font-semibold" title="${row.nomeContrato || 'Contrato encontrado'}"><i data-lucide="check-circle" class="w-3 h-3"></i> Sim</span>`
@@ -2384,7 +2519,9 @@
                 <td class="px-3 py-2">
                     <input type="checkbox" class="nota-checkbox w-4 h-4 accent-frexco cursor-pointer" data-idx="${notaIdx}" onchange="onNotaCheckChange()">
                 </td>
-                <td class="px-3 py-2 truncate max-w-[120px]" title="${row.arquivo}">${row.arquivo}</td>
+                <td class="px-3 py-2 truncate max-w-[120px]">
+                    <span title="${row.arquivo}">${row.arquivo}</span>${ocrEditBtn}
+                </td>
                 <td class="px-3 py-2 max-w-[140px]">${responsavelCell}</td>
                 <td class="px-3 py-2 max-w-[160px]">${motoristasCell}</td>
                 <td class="px-3 py-2 truncate max-w-[160px]" title="${row.prestador}">${row.prestador}</td>
@@ -2399,6 +2536,66 @@
             `;
             document.getElementById('resultsBody').appendChild(tr);
             lucide.createIcons();
+        }
+
+        // ========================================
+        // EDITAR NOTA OCR
+        // ========================================
+
+        let _ocrEditIdx = null;
+
+        function abrirOcrEdit(notaIdx) {
+            _ocrEditIdx = notaIdx;
+            const r = extractedResults[notaIdx];
+            document.getElementById('ocrEditArquivo').textContent = r.arquivo;
+            document.getElementById('ocrPrestador').value    = r.prestador || '';
+            document.getElementById('ocrCnpj').value         = r.cnpj || '';
+            document.getElementById('ocrNumeroNF').value     = r.numeroNF || '';
+            document.getElementById('ocrVServico').value     = r.vServico || '';
+            document.getElementById('ocrVLiquido').value     = r.vLiquido || '';
+            document.getElementById('ocrDataEmissao').value  = r.dataEmissao || '';
+            document.getElementById('ocrModelo').value       = r.modelo || '';
+            document.getElementById('ocrEditModal').classList.remove('hidden');
+            lucide.createIcons();
+        }
+
+        function fecharOcrEdit() {
+            _ocrEditIdx = null;
+            document.getElementById('ocrEditModal').classList.add('hidden');
+        }
+
+        async function salvarOcrEdit() {
+            if (_ocrEditIdx === null) return;
+            const r = extractedResults[_ocrEditIdx];
+
+            r.prestador   = document.getElementById('ocrPrestador').value.trim();
+            r.cnpj        = document.getElementById('ocrCnpj').value.trim();
+            r.numeroNF    = document.getElementById('ocrNumeroNF').value.trim();
+            r.vServico    = parseFloat(document.getElementById('ocrVServico').value) || 0;
+            r.vLiquido    = parseFloat(document.getElementById('ocrVLiquido').value) || 0;
+            r.dataEmissao = document.getElementById('ocrDataEmissao').value.trim();
+            r.modelo      = document.getElementById('ocrModelo').value.trim();
+
+            // Reatualizar responsável e PIX com base no novo CNPJ
+            const prestadorResp = findPrestadorByCnpj(r.cnpj);
+            r.responsavel = prestadorResp ? { vehicleId: prestadorResp.vehicleId, nome: prestadorResp.nome } : null;
+            if (r.motoristasNaNota && r.motoristasNaNota.length === 0 && r.responsavel) {
+                r.motoristasNaNota = [{ ...r.responsavel }];
+            }
+            r.chavePix = findPixByFileName(r.arquivo, r.cnpj);
+            const contratoMatch = temContrato(r.arquivo, r.cnpj);
+            r.temContrato = contratoMatch.match;
+            r.nomeContrato = contratoMatch.contrato;
+
+            saveResultsToStorage();
+            if (useSharePoint && r._spFileName) await saveNotaSP(r);
+
+            // Re-renderizar tabela
+            const tbody = document.getElementById('resultsBody');
+            tbody.innerHTML = '';
+            getNotasFiltradas().forEach(row => renderRow(row));
+            updateCoverageStats();
+            fecharOcrEdit();
         }
 
         // ========================================
