@@ -1313,12 +1313,20 @@
                 for (const { driverId, nome, vehicleId, vehicles, cd, inUse, time } of rowsValidos) {
                     let existente = null;
 
-                    if (isNovoFormato && vehicleId) {
-                        // Match primário: vehicle_id da planilha (antes da migração)
-                        existente = snapshotByVehicleId[vehicleId] || null;
+                    if (isNovoFormato) {
+                        // Match pelo primeiro vehicleId do grupo
+                        if (vehicleId) existente = snapshotByVehicleId[vehicleId] || null;
+
+                        // Se não achou, tenta os demais veículos do motorista
+                        // (o primeiro vehicleId processado pode não ser o da base antiga)
+                        if (!existente && Array.isArray(vehicles)) {
+                            for (const v of vehicles) {
+                                const found = snapshotByVehicleId[v.vehicleId] || null;
+                                if (found) { existente = found; break; }
+                            }
+                        }
                     }
-                    // Match secundário: driver_id via mesmo snapshot
-                    // (pós-migração, vehicleId do registro já foi atualizado para driverId)
+                    // Fallback: driverId via mesmo snapshot (pós-migração, vehicleId já = driverId)
                     if (!existente) {
                         existente = snapshotByVehicleId[driverId] || null;
                     }
@@ -1394,25 +1402,25 @@
         }
 
         async function limparBasePrestadores() {
-            const ativos = prestadoresList.filter(p => p.inUse !== false);
-            if (!confirm(`⚠️ Isso apagará os CNPJs, PIX e contratos de ${ativos.length} motoristas.\n\nOs nomes e IDs são preservados.\n\nUse antes de reimportar dados corrigidos.\n\nContinuar?`)) return;
+            const total = prestadoresList.length;
+            if (!confirm(`⚠️ ATENÇÃO: Isso vai excluir TODOS os ${total} motoristas cadastrados (ativos e inativos), incluindo CNPJs, PIX e contratos.\n\nUse esta opção antes de reimportar uma base nova do zero.\n\nEsta ação não pode ser desfeita. Continuar?`)) return;
 
-            prestadoresList.forEach(p => {
-                p.cnpjs = [];
-                p.contrato = null;
-            });
-
+            // Apagar todos os registros de motoristas (ativos e inativos)
             if (useSharePoint) {
+                prestadoresList = [];
                 await savePrestadoresSP_internal();
                 await loadPrestadoresFromSharePoint();
             } else {
-                for (const p of prestadoresList) {
-                    if (p.id) await savePrestadorLocal(p);
+                for (const p of [...prestadoresList]) {
+                    if (p.id) await deletePrestadorLocal(p.id);
                 }
+                prestadoresList = [];
                 await loadPrestadoresLocal();
             }
+
             reprocessExtractedResults();
-            alert('✅ CNPJs, PIX e contratos apagados.\n\nAgora reimporte a planilha de CNPJs/PIX e os contratos ZIP.');
+            renderPrestadoresList();
+            alert(`✅ Base limpa: ${total} motoristas removidos.\n\nAgora importe a base de motoristas, CNPJs/PIX e contratos do zero.`);
         }
         async function excluirRecebivel() {
             if (recebivelData.length === 0) { alert('A base de recebível já está vazia.'); return; }
