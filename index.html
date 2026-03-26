@@ -1296,91 +1296,124 @@
 
                 let novos = 0, atualizados = 0, excluidos = 0, migrados = 0;
 
-                // Build lookup: vehicle_id → prestador existente (para migração formato novo)
-                // Snapshot ANTES de qualquer alteração para evitar colisões
-                const snapshotByVehicleId = {};
-                const snapshotByDriverId  = {};
-                prestadoresList.forEach(p => {
-                    if (!p.vehicleId) return;
-                    const id = String(p.vehicleId);
-                    if (id.startsWith('M')) return;
-                    const num = parseInt(id);
-                    snapshotByVehicleId[num] = p;
-                    snapshotByDriverId[num]  = p;
-                });
-
-                // PASSO 1: Migrar / atualizar / criar — usando o snapshot para lookup
-                for (const { driverId, nome, vehicleId, vehicles, cd, inUse, time } of rowsValidos) {
-                    let existente = null;
-
-                    if (isNovoFormato) {
-                        // Match pelo primeiro vehicleId do grupo
-                        if (vehicleId) existente = snapshotByVehicleId[vehicleId] || null;
-
-                        // Se não achou, tenta os demais veículos do motorista
-                        // (o primeiro vehicleId processado pode não ser o da base antiga)
-                        if (!existente && Array.isArray(vehicles)) {
-                            for (const v of vehicles) {
-                                const found = snapshotByVehicleId[v.vehicleId] || null;
-                                if (found) { existente = found; break; }
+                if (isNovoFormato) {
+                    // ─── NOVO FORMATO: VLOOKUP vehicleId → driverId ──────────────────────────
+                    // Monta tabela de lookup: vehicleId (da nova base) → entry do motorista
+                    const vehicleIdMap = new Map();
+                    for (const entry of rowsValidos) {
+                        if (entry.vehicleId && !vehicleIdMap.has(entry.vehicleId)) {
+                            vehicleIdMap.set(entry.vehicleId, entry);
+                        }
+                        for (const v of (entry.vehicles || [])) {
+                            if (v.vehicleId && !vehicleIdMap.has(v.vehicleId)) {
+                                vehicleIdMap.set(v.vehicleId, entry);
                             }
                         }
                     }
-                    // Fallback: driverId via mesmo snapshot (pós-migração, vehicleId já = driverId)
-                    if (!existente) {
-                        existente = snapshotByVehicleId[driverId] || null;
-                    }
 
-                    if (existente) {
-                        const eraVehicleId = isNovoFormato && vehicleId
-                            && parseInt(existente.vehicleId) === vehicleId
-                            && parseInt(existente.vehicleId) !== driverId;
-                        if (eraVehicleId) {
-                            existente.vehicleId = driverId;
+                    const matchedDriverIds = new Set();
+
+                    // Para cada registro existente, VLOOKUP pelo vehicleId na nova base
+                    for (const p of [...prestadoresList]) {
+                        const vid = parseInt(p.vehicleId);
+                        if (isNaN(vid) || String(p.vehicleId).startsWith('M')) continue;
+
+                        const entry = vehicleIdMap.get(vid);
+                        if (entry) {
+                            // Encontrou: migrar vehicleId → driverId e atualizar dados
+                            p.vehicleId = entry.driverId;
+                            p.nome      = entry.nome;
+                            p.cd        = entry.cd;
+                            p.inUse     = entry.inUse;
+                            p.time      = entry.time || p.time || '';
+                            p.vehicles  = entry.vehicles || [];
+                            if (!useSharePoint) await savePrestadorLocal(p);
+                            matchedDriverIds.add(entry.driverId);
+                            atualizados++;
                             migrados++;
                         } else {
-                            existente.vehicleId = driverId;
+                            // vehicleId não existe na nova base: excluir o registro
+                            if (!useSharePoint && p.id) await deletePrestadorLocal(p.id);
+                            excluidos++;
                         }
-                        existente.nome     = nome;
-                        existente.cd       = cd;
-                        existente.inUse    = inUse;
-                        existente.time     = time || existente.time || '';
-                        existente.vehicles = vehicles || existente.vehicles || [];
-                        if (!useSharePoint) await savePrestadorLocal(existente);
-                        atualizados++;
-                    } else {
-                        const novo = {
-                            vehicleId: driverId, nome, cd, time: time || '', inUse,
-                            vehicles: vehicles || [],
-                            cnpjs: [], contrato: null,
-                            fromSharePoint: useSharePoint,
-                            dataAdicao: new Date().toISOString()
-                        };
-                        if (!useSharePoint) { const id = await savePrestadorLocal(novo); novo.id = id; }
-                        prestadoresList.push(novo);
-                        novos++;
                     }
-                }
 
-                // PASSO 2: Excluir prestadores que não foram atualizados (não estão na nova base)
-                // Após migração, todos os registros válidos já têm vehicleId = driverId da nova base
-                const aExcluir = prestadoresList.filter(p => {
-                    if (!p.vehicleId) return false;
-                    const id = String(p.vehicleId);
-                    if (id.startsWith('M')) return false;
-                    return !idsNaBase.has(parseInt(id));
-                });
-                for (const p of aExcluir) {
-                    if (!useSharePoint && p.id) await deletePrestadorLocal(p.id);
-                    excluidos++;
-                }
-                if (aExcluir.length > 0) {
+                    // Filtra a lista: mantém apenas os que foram migrados (vehicleId = driverId agora)
                     prestadoresList = prestadoresList.filter(p => {
-                        if (!p.vehicleId) return true;
-                        const id = String(p.vehicleId);
-                        if (id.startsWith('M')) return true;
-                        return idsNaBase.has(parseInt(id));
+                        const vid = parseInt(p.vehicleId);
+                        if (isNaN(vid) || String(p.vehicleId).startsWith('M')) return true;
+                        return idsNaBase.has(vid);
                     });
+
+                    // Cria registros para entradas da nova base sem match (motoristas novos)
+                    for (const entry of rowsValidos) {
+                        if (!matchedDriverIds.has(entry.driverId)) {
+                            const novo = {
+                                vehicleId: entry.driverId, nome: entry.nome,
+                                cd: entry.cd, time: entry.time || '', inUse: entry.inUse,
+                                vehicles: entry.vehicles || [], cnpjs: [], contrato: null,
+                                fromSharePoint: useSharePoint,
+                                dataAdicao: new Date().toISOString()
+                            };
+                            if (!useSharePoint) { const id = await savePrestadorLocal(novo); novo.id = id; }
+                            prestadoresList.push(novo);
+                            novos++;
+                        }
+                    }
+
+                } else {
+                    // ─── FORMATO ANTIGO: match por vehicleId (=driverId) via snapshot ─────────
+                    const snapshotAntigo = {};
+                    prestadoresList.forEach(p => {
+                        if (!p.vehicleId) return;
+                        const id = String(p.vehicleId);
+                        if (id.startsWith('M')) return;
+                        snapshotAntigo[parseInt(id)] = p;
+                    });
+
+                    for (const { driverId, nome, vehicleId, vehicles, cd, inUse, time } of rowsValidos) {
+                        const existente = snapshotAntigo[driverId] || null;
+                        if (existente) {
+                            existente.vehicleId = driverId;
+                            existente.nome      = nome;
+                            existente.cd        = cd;
+                            existente.inUse     = inUse;
+                            existente.time      = time || existente.time || '';
+                            existente.vehicles  = vehicles || existente.vehicles || [];
+                            if (!useSharePoint) await savePrestadorLocal(existente);
+                            atualizados++;
+                        } else {
+                            const novo = {
+                                vehicleId: driverId, nome, cd, time: time || '', inUse,
+                                vehicles: vehicles || [], cnpjs: [], contrato: null,
+                                fromSharePoint: useSharePoint,
+                                dataAdicao: new Date().toISOString()
+                            };
+                            if (!useSharePoint) { const id = await savePrestadorLocal(novo); novo.id = id; }
+                            prestadoresList.push(novo);
+                            novos++;
+                        }
+                    }
+
+                    // Exclui registros não presentes na base importada
+                    const aExcluir = prestadoresList.filter(p => {
+                        if (!p.vehicleId) return false;
+                        const id = String(p.vehicleId);
+                        if (id.startsWith('M')) return false;
+                        return !idsNaBase.has(parseInt(id));
+                    });
+                    for (const p of aExcluir) {
+                        if (!useSharePoint && p.id) await deletePrestadorLocal(p.id);
+                        excluidos++;
+                    }
+                    if (aExcluir.length > 0) {
+                        prestadoresList = prestadoresList.filter(p => {
+                            if (!p.vehicleId) return true;
+                            const id = String(p.vehicleId);
+                            if (id.startsWith('M')) return true;
+                            return idsNaBase.has(parseInt(id));
+                        });
+                    }
                 }
 
                 if (useSharePoint) {
