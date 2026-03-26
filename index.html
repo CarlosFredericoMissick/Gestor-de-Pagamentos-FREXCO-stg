@@ -470,12 +470,18 @@
                     <thead>
                         <tr class="bg-gray-100 text-gray-600 font-bold uppercase whitespace-nowrap sticky top-0">
                             <th class="px-3 py-2">Arquivo</th>
-                            <th class="px-3 py-2">Responsável</th>
+                            <th class="px-3 py-2 cursor-pointer select-none hover:bg-gray-200 transition-colors" onclick="sortConcil('responsavel')">
+                                <span class="flex items-center gap-1">Responsável <span id="concil-sort-responsavel" class="text-gray-400">↕</span></span>
+                            </th>
                             <th class="px-3 py-2">Motoristas</th>
                             <th class="px-3 py-2 text-center">Data Emissão</th>
-                            <th class="px-3 py-2 text-right">Valor Nota (R$)</th>
+                            <th class="px-3 py-2 text-right cursor-pointer select-none hover:bg-gray-200 transition-colors" onclick="sortConcil('valorNota')">
+                                <span class="flex items-center justify-end gap-1">Valor Nota (R$) <span id="concil-sort-valorNota" class="text-gray-400">↕</span></span>
+                            </th>
                             <th class="px-3 py-2 text-right">Valor Devido (R$)</th>
-                            <th class="px-3 py-2 text-right">Diferença (R$)</th>
+                            <th class="px-3 py-2 text-right cursor-pointer select-none hover:bg-gray-200 transition-colors" onclick="sortConcil('diferenca')">
+                                <span class="flex items-center justify-end gap-1">Diferença (R$) <span id="concil-sort-diferenca" class="text-gray-400">↕</span></span>
+                            </th>
                             <th class="px-3 py-2 text-right">Dif %</th>
                             <th class="px-3 py-2 text-center">Status</th>
                         </tr>
@@ -851,7 +857,7 @@
                 if (p.cnpj) cnpjs.push({ cnpj: p.cnpj, chavePix: p.chavePix || '' });
                 return {
                     id: p.id || (Date.now() + Math.random()),
-                    vehicleId: p.vehicleId || null,
+                    vehicleId: p.vehicleId || ('M' + (p.id || Date.now()).toString()),
                     nome: p.nome || p.nomeMotorista || '',
                     cd: p.cd || '',
                     time: p.time || '',
@@ -895,7 +901,7 @@
             if (legacyPix.length === 0) return;
             for (const p of legacyPix) {
                 const novo = {
-                    vehicleId: null, nome: p.nomeMotorista, cd: '', time: '', inUse: true,
+                    vehicleId: 'M' + (p.id || Date.now() + Math.random().toString(36).substr(2,4)), nome: p.nomeMotorista, cd: '', time: '', inUse: true,
                     cnpjs: p.chavePix ? [{ cnpj: '', chavePix: p.chavePix }] : [],
                     contrato: null, fromSharePoint: false,
                     dataAdicao: p.dataAdicao || new Date().toISOString()
@@ -1492,7 +1498,8 @@
                 if (useSharePoint) { await savePrestadoresSP_internal(); }
                 else { await savePrestadorLocal(p); }
             } else {
-                const novo = { vehicleId: null, nome, cd: '', time: '', inUse: true, cnpjs, contrato: null, fromSharePoint: useSharePoint, dataAdicao: new Date().toISOString() };
+                const manualId = 'M' + Date.now();
+                const novo = { vehicleId: manualId, nome, cd: '', time: '', inUse: true, cnpjs, contrato: null, fromSharePoint: useSharePoint, dataAdicao: new Date().toISOString() };
                 if (useSharePoint) { prestadoresList.push(novo); await savePrestadoresSP_internal(); }
                 else { const newId = await savePrestadorLocal(novo); novo.id = newId; prestadoresList.push(novo); }
             }
@@ -1578,7 +1585,9 @@
                 !query ||
                 (p.nome || '').toLowerCase().includes(query) ||
                 (p.time || '').toLowerCase().includes(query) ||
-                (Array.isArray(p.cnpjs) && p.cnpjs.some(c => (c.cnpj||''). replace(/\D/g,'').includes(query.replace(/\D/g,''))))
+                (p.cd || '').toLowerCase().includes(query) ||
+                (p.vehicleId && String(p.vehicleId).includes(query)) ||
+                (Array.isArray(p.cnpjs) && p.cnpjs.some(c => (c.cnpj||'').replace(/\D/g,'').includes(query.replace(/\D/g,''))))
             );
 
             if (ativos.length === 0) {
@@ -2790,6 +2799,61 @@
         // CONCILIAÇÃO
         // ========================================
 
+        // ========================================
+        // CONCILIAÇÃO — SORT
+        // ========================================
+
+        let _concilSort = { field: null, dir: 1 }; // dir: 1=asc, -1=desc
+        let _concilRows = []; // cache das linhas calculadas para re-sort sem recalcular
+
+        function sortConcil(field) {
+            if (_concilRows.length === 0) return;
+            if (_concilSort.field === field) {
+                _concilSort.dir *= -1;
+            } else {
+                _concilSort.field = field;
+                _concilSort.dir = 1;
+            }
+            // Atualizar ícones
+            ['responsavel','valorNota','diferenca'].forEach(f => {
+                const el = document.getElementById(`concil-sort-${f}`);
+                if (!el) return;
+                if (f === field) {
+                    el.textContent = _concilSort.dir === 1 ? '↑' : '↓';
+                    el.className = 'text-gray-800';
+                } else {
+                    el.textContent = '↕';
+                    el.className = 'text-gray-400';
+                }
+            });
+            renderConcilRows();
+        }
+
+        function renderConcilRows() {
+            const rows = [..._concilRows];
+            const { field, dir } = _concilSort;
+            if (field) {
+                rows.sort((a, b) => {
+                    let va, vb;
+                    if (field === 'responsavel') {
+                        va = (a.respNome || '').toLowerCase();
+                        vb = (b.respNome || '').toLowerCase();
+                        return dir * va.localeCompare(vb, 'pt-BR');
+                    } else if (field === 'valorNota') {
+                        va = a.valorNota || 0;
+                        vb = b.valorNota || 0;
+                    } else if (field === 'diferenca') {
+                        va = a.diff !== null ? a.diff : -Infinity;
+                        vb = b.diff !== null ? b.diff : -Infinity;
+                    }
+                    return dir * (va - vb);
+                });
+            }
+            const tbody = document.getElementById('concilBody');
+            tbody.innerHTML = '';
+            rows.forEach(r => tbody.appendChild(r.tr));
+        }
+
         function toggleConciliacaoModal() {
             const modal = document.getElementById('conciliacaoModal');
             const isHidden = modal.classList.contains('hidden');
@@ -2865,8 +2929,13 @@
                 : [...extractedResults];
 
             let ok = 0, divergente = 0, semDados = 0;
-            const tbody = document.getElementById('concilBody');
-            tbody.innerHTML = '';
+            _concilRows = [];
+            _concilSort = { field: null, dir: 1 };
+            // Reset sort icons
+            ['responsavel','valorNota','diferenca'].forEach(f => {
+                const el = document.getElementById(`concil-sort-${f}`);
+                if (el) { el.textContent = '↕'; el.className = 'text-gray-400'; }
+            });
 
             notasFiltradas.forEach(nota => {
                 // Garantir que motoristasNaNota exista mesmo em notas antigas
@@ -2928,8 +2997,11 @@
                     <td class="px-3 py-2 text-right ${diffColor}">${fmtPct(diffPct)}</td>
                     <td class="px-3 py-2 text-center"><span class="px-2 py-0.5 rounded-full text-[10px] font-semibold ${statusClass}">${status}</span></td>
                 `;
-                tbody.appendChild(tr);
+                _concilRows.push({ tr, respNome, valorNota, diff });
             });
+
+            // Renderizar tabela (com sort padrão = nenhum)
+            renderConcilRows();
 
             // Atualizar cards
             document.getElementById('concilCardsArea').classList.remove('hidden');
