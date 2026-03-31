@@ -2296,8 +2296,10 @@
                     }
                 }
                 // Se havia exatamente 1 motorista (auto-preenchido) e o CNPJ aponta para outro, corrigir
+                // EXCETO se o prestador é um líder — líderes não devem substituir os motoristas vinculados
                 else if (
                     prestadorResp &&
+                    prestadorResp.tipo !== 'lider' &&
                     Array.isArray(result.motoristasNaNota) &&
                     result.motoristasNaNota.length === 1 &&
                     String(result.motoristasNaNota[0].vehicleId) !== String(prestadorResp.vehicleId)
@@ -3308,12 +3310,21 @@
 
         // Helper: obtém times de uma nota dinamicamente (sem depender de _times)
         function getTimesNota(nota) {
+            // Primeiro tenta pelo responsável direto da nota (via CNPJ)
+            const prestResp = nota.cnpj ? findPrestadorByCnpj(nota.cnpj) : null;
+            if (prestResp) {
+                // Líder: usa timeVinculado; Motorista: usa time
+                const t = prestResp.tipo === 'lider' ? prestResp.timeVinculado : prestResp.time;
+                if (t) return [t];
+            }
+
+            // Fallback: deriva dos motoristasNaNota
             const motoristas = nota.motoristasNaNota
                 || (nota.responsavel ? [nota.responsavel] : []);
             const times = new Set(
                 motoristas.map(m => {
                     const p = findPrestadorByVehicleId(m.vehicleId);
-                    return p?.time || '';
+                    return (p?.tipo === 'lider' ? p?.timeVinculado : p?.time) || '';
                 }).filter(Boolean)
             );
             return [...times];
