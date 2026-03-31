@@ -2433,6 +2433,18 @@
             const fmtMoney = (v) => (v || 0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
             const filtradas = getNotasFiltradas();
 
+            // Mostrar/ocultar botão Excel sempre que os dados mudarem
+            const btnExport = document.getElementById('btnExport');
+            if (btnExport) {
+                if (extractedResults.length > 0) {
+                    btnExport.classList.remove('hidden');
+                    btnExport.disabled = false;
+                } else {
+                    btnExport.classList.add('hidden');
+                    btnExport.disabled = true;
+                }
+            }
+
             if (extractedResults.length === 0) {
                 document.getElementById('statsPanel').classList.add('hidden');
                 document.getElementById('totalLiquidoPanel').classList.add('hidden');
