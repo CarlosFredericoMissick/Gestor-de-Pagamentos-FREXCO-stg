@@ -3407,13 +3407,14 @@
                 // Célula Valor Devido: clicável para detalhe
                 const valorDevidoCell = temDados
                     ? (isLider
-                        ? `<td class="px-3 py-2 text-right font-mono text-purple-700 underline cursor-pointer hover:text-purple-900"
-                              onclick="abrirConcilDetalheLider(
-                                prestadoresList.find(p=>p.vehicleId==='${prestResp.vehicleId}'),
-                                ${JSON.stringify((motoristasEfetivos||[]).map(m=>({vehicleId:m.vehicleId,nome:m.nome})))},
-                                new Date('${dataInicio.toISOString()}'),
-                                new Date('${dataFim.toISOString()}'))">
-                              ${fmtMoney(valorDevido)}</td>`
+                        ? (() => {
+                            // Armazena dados do líder para acesso pelo onclick sem problemas de escapamento
+                            const liderIdx = prestadoresList.indexOf(prestResp);
+                            const motJSON  = encodeURIComponent(JSON.stringify((motoristasEfetivos||[]).map(m=>({vehicleId:m.vehicleId,nome:m.nome}))));
+                            return `<td class="px-3 py-2 text-right font-mono text-purple-700 underline cursor-pointer hover:text-purple-900"
+                                  onclick="abrirConcilDetalheLiderIdx(${liderIdx}, '${encodeURIComponent(dataInicio.toISOString())}', '${encodeURIComponent(dataFim.toISOString())}', '${motJSON}')">
+                                  ${fmtMoney(valorDevido)}</td>`;
+                          })()
                         : driverIdParaDetalhe
                             ? `<td class="px-3 py-2 text-right font-mono text-blue-700 underline cursor-pointer hover:text-blue-900"
                                   onclick="abrirConcilDetalhe(${driverIdParaDetalhe}, '${respNome.replace(/'/g,"\\'")}', new Date('${dataInicio.toISOString()}'), new Date('${dataFim.toISOString()}'))">
@@ -4060,6 +4061,15 @@
 
             document.getElementById('concilDetalheModal').classList.remove('hidden');
             lucide.createIcons();
+        }
+
+        function abrirConcilDetalheLiderIdx(liderIdx, dataInicioEnc, dataFimEnc, motoristasEnc) {
+            const lider = prestadoresList[liderIdx];
+            if (!lider) return;
+            const motoristasNaNota = JSON.parse(decodeURIComponent(motoristasEnc));
+            const dataInicio = new Date(decodeURIComponent(dataInicioEnc));
+            const dataFim    = new Date(decodeURIComponent(dataFimEnc));
+            abrirConcilDetalheLider(lider, motoristasNaNota, dataInicio, dataFim);
         }
 
         function abrirConcilDetalheLider(lider, motoristasNaNota, dataInicio, dataFim) {
