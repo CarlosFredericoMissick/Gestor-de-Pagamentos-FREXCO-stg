@@ -111,7 +111,7 @@
             <div class="px-6 py-4 bg-gray-50/50 border-t border-gray-100 flex flex-wrap gap-2 items-center">
                 <button id="btnSharePoint" onclick="toggleSharePoint()" 
                     class="flex items-center gap-2 bg-white hover:bg-gray-50 text-gray-700 px-4 py-2.5 rounded-xl font-semibold shadow-sm border border-gray-200 transition-all-smooth text-sm hover:shadow-md hover:border-frexco/30">
-                    <i data-lucide="cloud" class="w-4 h-4 text-gray-600"></i> 
+                    <svg id="iconSharePoint" xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-gray-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>
                     <span>Conectar SharePoint</span>
                 </button>
                 <div class="h-6 w-px bg-gray-300"></div>
@@ -854,13 +854,13 @@
                 spAccount = null;
                 document.getElementById('spIndicator').classList.add('hidden');
                 document.querySelector('#btnSharePoint span').textContent = 'Conectar SharePoint';
-                const icon = document.querySelector('#btnSharePoint i');
+                const icon = document.getElementById('iconSharePoint');
                 if (icon) { icon.classList.remove('spin'); }
                 await loadPrestadoresLocal();
                 reprocessExtractedResults();
             } else {
                 const btn  = document.getElementById('btnSharePoint');
-                const icon = btn?.querySelector('i');
+                const icon = document.getElementById('iconSharePoint');
                 const span = btn?.querySelector('span');
                 const setPhase = (txt) => { if (span) span.textContent = txt; };
 
@@ -913,7 +913,6 @@
                     }
                 }
             }
-            lucide.createIcons();
         }
 
         // Verifica silenciosamente se o token ainda é válido a cada 5 minutos
@@ -1902,7 +1901,7 @@
         }
 
         async function gerarZipNotas() {
-            const notas = extractedResults.filter(n => n._pdfSpPath || n._pdfSpId);
+            const notas = getNotasFiltradas().filter(n => n._pdfSpPath || n._pdfSpId);
             if (notas.length === 0) {
                 alert('Nenhuma nota com PDF armazenado no SharePoint. Processe as notas enquanto conectado ao SharePoint para habilitar esta função.');
                 return;
@@ -3378,13 +3377,14 @@
         }
 
         function exportToExcel() {
-            if (extractedResults.length === 0) {
+            const filtradas = getNotasFiltradas();
+            if (filtradas.length === 0) {
                 alert("Nenhum dado para exportar!");
                 return;
             }
             
             try {
-                const data = extractedResults.map(row => {
+                const data = filtradas.map(row => {
                     let dateObj = null;
                     if (row.dataEmissao && row.dataEmissao.includes('/')) {
                         let datePart = row.dataEmissao.match(/(\d{2}\/\d{2}\/\d{4})/);
@@ -3401,13 +3401,13 @@
                     }
 
                     return {
-                        'Nome do Arquivo': row.arquivo,      // A
+                        'Responsável': row.responsavel?.nome || row.prestador || '', // A ← alterado
                         'Razão Social': row.prestador,       // B
                         'CNPJ Prestador': row.cnpj,          // C
                         'Valor Líquido': row.vLiquido,       // D
                         'Valor Serviço': row.vServico,       // E
                         ' ': '',                             // F (vazia)
-                        'Chave PIX': row.chavePix || '',     // G (NOVA)
+                        'Chave PIX': row.chavePix || '',     // G
                         '  ': '',                            // H (vazia)
                         '   ': '',                           // I (vazia)
                         'Data Emissão': dateObj,             // J
@@ -3533,23 +3533,18 @@
 
         // Helper: obtém times de uma nota dinamicamente (sem depender de _times)
         function getTimesNota(nota) {
-            // Primeiro tenta pelo responsável direto da nota (via CNPJ)
-            const prestResp = nota.cnpj ? findPrestadorByCnpj(nota.cnpj) : null;
-            if (prestResp) {
-                // Líder: usa timeVinculado; Motorista: usa time
-                const t = prestResp.tipo === 'lider' ? prestResp.timeVinculado : prestResp.time;
-                if (t) return [t];
-            }
+            const motoristas = (nota.motoristasNaNota && nota.motoristasNaNota.length > 0)
+                ? nota.motoristasNaNota
+                : (nota.responsavel ? [nota.responsavel] : []);
 
-            // Fallback: deriva dos motoristasNaNota
-            const motoristas = nota.motoristasNaNota
-                || (nota.responsavel ? [nota.responsavel] : []);
-            const times = new Set(
-                motoristas.map(m => {
-                    const p = findPrestadorByVehicleId(m.vehicleId);
-                    return (p?.tipo === 'lider' ? p?.timeVinculado : p?.time) || '';
-                }).filter(Boolean)
-            );
+            const times = new Set();
+            motoristas.forEach(m => {
+                const p = findPrestadorByVehicleId(m.vehicleId);
+                if (!p) return;
+                const t = p.tipo === 'lider' ? p.timeVinculado : p.time;
+                if (t) times.add(t);
+            });
+
             return [...times];
         }
 
