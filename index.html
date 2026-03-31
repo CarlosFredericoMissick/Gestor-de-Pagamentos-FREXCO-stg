@@ -87,7 +87,7 @@
                         <h1 class="text-xl md:text-2xl font-bold text-white tracking-tight">
                             Gestor de Pagamentos
                         </h1>
-                        <p class="text-white/90 text-xs md:text-sm font-medium">Extrator NFSe • v54.0</p>
+                        <p class="text-white/90 text-xs md:text-sm font-medium">Extrator NFSe • v62.0</p>
                     </div>
                 </div>
                 
@@ -218,9 +218,19 @@
                 <div class="bg-white rounded-xl shadow-sm border border-gray-200 min-h-[500px] flex flex-col">
                     <!-- Barra de filtro + ações em massa -->
                     <div class="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-gray-100 bg-gray-50/50">
-                        <select id="filtroTime" onchange="aplicarFiltroTime()" class="text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-frexco/40 focus:border-frexco outline-none bg-white">
-                            <option value="">Todos os times</option>
-                        </select>
+                        <div class="relative" id="filtroTimeWrapper">
+                            <button onclick="toggleFiltroTimeDropdown()" class="flex items-center gap-2 text-sm border border-gray-300 rounded-lg px-3 py-1.5 bg-white hover:bg-gray-50 focus:ring-2 focus:ring-frexco/40 outline-none transition-colors min-w-[140px] justify-between">
+                                <span id="filtroTimeBtnLabel" class="text-gray-700">Todos os times</span>
+                                <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-gray-400 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                            </button>
+                            <div id="filtroTimeDropdown" class="hidden absolute z-50 top-full left-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg min-w-[180px] py-2 max-h-64 overflow-y-auto">
+                                <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 cursor-pointer text-xs font-semibold text-gray-700 border-b border-gray-100 mb-1">
+                                    <input type="checkbox" id="filtroTimeTodos" class="w-3.5 h-3.5 accent-frexco" onchange="onFiltroTimeTodosChange(this.checked)">
+                                    Todos
+                                </label>
+                                <div id="filtroTimeCheckboxes" class="space-y-0.5"></div>
+                            </div>
+                        </div>
                         <div id="notasSelecaoBar" class="hidden flex items-center gap-2 ml-auto">
                             <span class="text-xs text-gray-600"><span id="notasSelCount">0</span> selecionada(s)</span>
                             <button id="btnExcluirNotas" onclick="excluirNotasSelecionadas()" class="flex items-center gap-1.5 bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition-all">
@@ -313,6 +323,9 @@
                 <button onclick="downloadAllContratosZip()" class="flex items-center gap-2 bg-white hover:bg-gray-50 border border-gray-300 text-gray-700 px-3 py-2 rounded-lg font-semibold text-sm transition-all">
                     <i data-lucide="archive" class="w-4 h-4"></i> ZIP Contratos
                 </button>
+                <button onclick="sincronizarLideresManual()" class="flex items-center gap-2 bg-white hover:bg-purple-50 border border-gray-300 hover:border-purple-300 text-purple-600 px-3 py-2 rounded-lg font-semibold text-sm transition-all" title="Detecta os times da base atual e cria/exclui líderes automaticamente">
+                    <span class="inline-block w-2 h-2 rounded-full bg-purple-500"></span> Sincronizar Líderes
+                </button>
                 <button onclick="limparBasePrestadores()" class="flex items-center gap-2 bg-white hover:bg-red-50 border border-gray-300 hover:border-red-300 text-red-600 px-3 py-2 rounded-lg font-semibold text-sm transition-all" title="Apaga todos os CNPJs, PIX e contratos. Use antes de reimportar para corrigir dados.">
                     <i data-lucide="alert-triangle" class="w-4 h-4"></i> Limpar Base
                 </button>
@@ -323,8 +336,22 @@
                 </button>
             </div>
 
+            <!-- Tabs -->
+            <div class="flex border-b border-gray-200 bg-white flex-shrink-0 px-6">
+                <button id="tabMotoristas" onclick="switchPrestadoresTab('motoristas')"
+                    class="px-4 py-2.5 text-sm font-semibold border-b-2 border-frexco text-frexco transition-colors">
+                    Motoristas
+                </button>
+                <button id="tabLideres" onclick="switchPrestadoresTab('lideres')"
+                    class="px-4 py-2.5 text-sm font-semibold border-b-2 border-transparent text-gray-500 hover:text-gray-700 transition-colors flex items-center gap-1.5">
+                    <span class="inline-block w-2 h-2 rounded-full bg-purple-500"></span>
+                    Líderes
+                    <span id="lideresCount" class="bg-purple-100 text-purple-700 text-[10px] font-bold px-1.5 py-0.5 rounded-full">0</span>
+                </button>
+            </div>
+
             <!-- Body -->
-            <div class="flex-1 overflow-y-auto p-6">
+            <div id="painel-motoristas" class="flex-1 overflow-y-auto p-6">
 
                 <!-- Form Adicionar/Editar Prestador -->
                 <div id="prestadorForm" class="hidden mb-5 bg-gray-50 rounded-xl p-5 border border-gray-200">
@@ -360,6 +387,14 @@
                         <input type="text" id="prestadoresSearch" placeholder="Buscar por nome, CNPJ ou time..." oninput="updatePrestadoresUI()"
                             class="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-frexco/40 focus:border-frexco outline-none">
                     </div>
+                    <label class="flex items-center gap-1.5 cursor-pointer select-none text-xs font-medium text-gray-600 whitespace-nowrap">
+                        <input type="checkbox" id="filtroPix" onchange="updatePrestadoresUI()" class="w-3.5 h-3.5 accent-frexco cursor-pointer">
+                        PIX
+                    </label>
+                    <label class="flex items-center gap-1.5 cursor-pointer select-none text-xs font-medium text-gray-600 whitespace-nowrap">
+                        <input type="checkbox" id="filtroContrato" onchange="updatePrestadoresUI()" class="w-3.5 h-3.5 accent-frexco cursor-pointer">
+                        Contrato
+                    </label>
                     <span class="text-xs text-gray-500 whitespace-nowrap">
                         <span id="prestadoresSavedCount">0</span> ativo(s)
                     </span>
@@ -387,6 +422,59 @@
                 <!-- Inputs ocultos -->
                 <input type="file" id="contratoUploadInput" accept=".pdf" class="hidden">
                 <input type="file" id="prestadorExcelInput" accept=".xlsx" class="hidden">
+            </div>
+
+            <!-- PAINEL LÍDERES -->
+            <div id="painel-lideres" class="hidden flex-1 overflow-y-auto p-6">
+                <div id="liderForm" class="hidden mb-5 bg-purple-50 rounded-xl p-5 border border-purple-200">
+                    <h4 class="text-sm font-bold text-purple-700 mb-4 flex items-center gap-1.5">
+                        <span class="inline-block w-2 h-2 rounded-full bg-purple-500"></span>
+                        <span id="liderFormTitle">Editar Líder</span>
+                    </h4>
+                    <div class="grid grid-cols-2 gap-3 mb-3">
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-600 mb-1">Nome</label>
+                            <input type="text" id="liderNome" disabled class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-100 text-gray-500 cursor-not-allowed">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-600 mb-1">Time vinculado</label>
+                            <input type="text" id="liderTime" disabled class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-100 text-gray-500 cursor-not-allowed">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <div class="flex items-center justify-between mb-2">
+                            <label class="text-xs font-semibold text-gray-600">CNPJs vinculados</label>
+                            <button onclick="addCnpjRowLider()" class="flex items-center gap-1 text-xs text-purple-600 hover:text-purple-800 font-semibold">
+                                <i data-lucide="plus" class="w-3 h-3"></i> Adicionar CNPJ
+                            </button>
+                        </div>
+                        <div id="cnpjRowsLiderContainer" class="space-y-2"></div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="text-xs font-semibold text-gray-600 block mb-1">Motoristas vinculados à nota</label>
+                        <p class="text-xs text-gray-400 mb-2">Pré-preenchidos em "Motoristas na Nota" quando este líder emite uma nota.</p>
+                        <div id="liderMotoristasVinculados" class="flex flex-wrap gap-1.5 mb-2 min-h-[28px]"></div>
+                        <div class="relative">
+                            <input type="text" id="liderMotoristaBusca" placeholder="Buscar motorista para vincular..." oninput="filtrarMotoristasLider(this.value)"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-300 outline-none">
+                            <div id="liderMotoristaSugestoes" class="hidden absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-40 overflow-y-auto"></div>
+                        </div>
+                    </div>
+                    <div class="flex gap-2 justify-end">
+                        <button onclick="cancelLiderForm()" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg text-sm font-semibold">Cancelar</button>
+                        <button onclick="saveLiderEntry()" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-semibold">Salvar</button>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3 mb-3">
+                    <div class="relative flex-1">
+                        <i data-lucide="search" class="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"></i>
+                        <input type="text" id="lideresSearch" placeholder="Buscar por nome ou CNPJ..." oninput="renderLideresList()"
+                            class="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-300 outline-none">
+                    </div>
+                    <span class="text-xs text-gray-500 whitespace-nowrap"><span id="lideresListCount">0</span> líder(es)</span>
+                </div>
+                <div id="lideresListContainer" class="space-y-2"></div>
+                <input type="file" id="contratoLiderUploadInput" accept=".pdf" class="hidden">
             </div>
         </div>
     </div>
@@ -422,9 +510,19 @@
                 <!-- Filtro time -->
                 <div>
                     <label class="block text-xs font-semibold text-gray-600 mb-1">Time</label>
-                    <select id="concilFiltroTime" class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-gray-400 outline-none bg-white">
-                        <option value="">Todos</option>
-                    </select>
+                    <div class="relative" id="concilFiltroTimeWrapper">
+                        <button onclick="toggleConcilTimeDropdown()" class="flex items-center gap-2 text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white hover:bg-gray-50 focus:ring-2 focus:ring-gray-400 outline-none transition-colors min-w-[140px] justify-between">
+                            <span id="concilTimeBtnLabel" class="text-gray-700">Todos</span>
+                            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-gray-400 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                        </button>
+                        <div id="concilTimeDropdown" class="hidden absolute z-50 top-full left-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg min-w-[180px] py-2 max-h-64 overflow-y-auto">
+                            <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 cursor-pointer text-xs font-semibold text-gray-700 border-b border-gray-100 mb-1">
+                                <input type="checkbox" id="concilTimeTodos" class="w-3.5 h-3.5 accent-gray-600" onchange="onConcilTimeTodosChange(this.checked)">
+                                Todos
+                            </label>
+                            <div id="concilTimeCheckboxes" class="space-y-0.5"></div>
+                        </div>
+                    </div>
                 </div>
                 <!-- Tolerância -->
                 <div>
@@ -439,6 +537,9 @@
                     <input type="file" id="recebivelInput" accept=".xlsx" class="hidden">
                     <button onclick="excluirRecebivel()" class="flex items-center gap-2 bg-white hover:bg-red-50 border border-gray-300 hover:border-red-300 text-red-600 px-3 py-2 rounded-lg text-sm font-semibold transition-all" title="Excluir base de recebível">
                         <i data-lucide="trash-2" class="w-4 h-4"></i> Excluir Base
+                    </button>
+                    <button onclick="exportarConciliacaoExcel()" class="flex items-center gap-2 bg-white hover:bg-gray-50 border border-gray-300 text-gray-700 px-3 py-2 rounded-lg text-sm font-semibold transition-all">
+                        <i data-lucide="file-spreadsheet" class="w-4 h-4 text-green-600"></i> Exportar
                     </button>
                     <button onclick="executarConciliacao()" class="flex items-center gap-2 bg-gray-800 hover:bg-gray-900 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all shadow-sm">
                         <i data-lucide="play" class="w-4 h-4"></i> Conciliar
@@ -495,6 +596,44 @@
                         </tr>
                     </thead>
                     <tbody id="concilBody" class="divide-y divide-gray-100"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Detalhe Conciliação -->
+    <div id="concilDetalheModal" class="hidden fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col">
+            <div class="bg-gray-800 px-5 py-4 flex items-center justify-between rounded-t-2xl flex-shrink-0">
+                <div>
+                    <h3 class="text-base font-bold text-white" id="concilDetalheNome">Detalhes</h3>
+                    <p class="text-white/60 text-xs" id="concilDetalhePeriodo"></p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button onclick="exportarDetalheMotoristaExcel()" class="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition-all">
+                        <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5"></i> Exportar
+                    </button>
+                    <button onclick="fecharConcilDetalhe()" class="text-white/70 hover:text-white ml-2">
+                        <i data-lucide="x" class="w-5 h-5"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="flex-1 overflow-auto p-5">
+                <div id="concilDetalheResumo" class="grid grid-cols-3 gap-3 mb-4"></div>
+                <table class="w-full text-left border-collapse text-xs">
+                    <thead>
+                        <tr class="bg-gray-100 text-gray-600 font-bold uppercase whitespace-nowrap">
+                            <th class="px-3 py-2">Data</th>
+                            <th class="px-3 py-2">Veículo</th>
+                            <th class="px-3 py-2">Rota</th>
+                            <th class="px-3 py-2 text-right">Val. Rotas</th>
+                            <th class="px-3 py-2 text-right">Ajuste</th>
+                            <th class="px-3 py-2 text-right">Adicional</th>
+                            <th class="px-3 py-2 text-right">Suporte</th>
+                            <th class="px-3 py-2 text-right font-bold text-gray-800">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody id="concilDetalheBody" class="divide-y divide-gray-100"></tbody>
                 </table>
             </div>
         </div>
@@ -634,7 +773,9 @@
 
         let prestadoresDB = null;
         let prestadoresList = []; // fonte única de verdade
+        let líderesList = [];     // líderes de time (tipo: 'lider')
         let recebivelData = [];   // planilha de recebível importada
+        let _prestadoresTab = 'motoristas'; // aba ativa no modal
 
         // SharePoint
         let useSharePoint = false;
@@ -1297,32 +1438,34 @@
                 let novos = 0, atualizados = 0, excluidos = 0, migrados = 0;
 
                 if (isNovoFormato) {
-                    // ─── NOVO FORMATO: VLOOKUP vehicleId → driverId ──────────────────────────
-                    // Monta tabela de lookup: vehicleId (da nova base) → entry do motorista
-                    const vehicleIdMap = new Map();
+                    // ─── NOVO FORMATO: match exclusivo por driverId ───────────────────────────
+                    // vehicleId é armazenado em vehicles[] apenas, nunca usado para matching.
+                    // Mapa: driverId → entry (para encontrar tanto pré quanto pós-migração)
+                    // Também mapeia vehicleId → entry para suportar a migração única da base antiga.
+                    const driverIdMap = new Map();
                     for (const entry of rowsValidos) {
-                        if (entry.vehicleId && !vehicleIdMap.has(entry.vehicleId)) {
-                            vehicleIdMap.set(entry.vehicleId, entry);
+                        // Chave principal: driverId
+                        if (!driverIdMap.has(entry.driverId)) {
+                            driverIdMap.set(entry.driverId, entry);
                         }
-                        for (const v of (entry.vehicles || [])) {
-                            if (v.vehicleId && !vehicleIdMap.has(v.vehicleId)) {
-                                vehicleIdMap.set(v.vehicleId, entry);
-                            }
+                        // Chave secundária: vehicleId (apenas para migração de base antiga)
+                        if (entry.vehicleId && !driverIdMap.has(entry.vehicleId)) {
+                            driverIdMap.set(entry.vehicleId, entry);
                         }
                     }
 
                     const matchedDriverIds = new Set();
 
-                    // Para cada registro existente, VLOOKUP pelo vehicleId na nova base
+                    // Para cada registro existente, busca pelo seu vehicleId (= driverId pós-migração
+                    // ou vehicle_id antigo na migração inicial)
                     for (const p of [...prestadoresList]) {
                         const vid = parseInt(p.vehicleId);
                         if (isNaN(vid) || String(p.vehicleId).startsWith('M')) continue;
 
-                        const entry = vehicleIdMap.get(vid);
+                        const entry = driverIdMap.get(vid);
                         if (entry) {
                             if (matchedDriverIds.has(entry.driverId)) {
-                                // Segundo match para o mesmo driverId → este é um duplicado
-                                // Mesclar CNPJs/contrato no registro primário, se ele não tiver
+                                // Duplicata: mescla dados no registro primário e descarta este
                                 const primario = prestadoresList.find(
                                     x => parseInt(x.vehicleId) === entry.driverId
                                 );
@@ -1335,8 +1478,8 @@
                                 if (!useSharePoint && p.id) await deletePrestadorLocal(p.id);
                                 excluidos++;
                             } else {
-                                // Primeiro match para este driverId → migrar e atualizar
-                                p.vehicleId = entry.driverId;
+                                // Match principal → atualizar com dados da nova base
+                                p.vehicleId = entry.driverId; // garante que usa driverId
                                 p.nome      = entry.nome;
                                 p.cd        = entry.cd;
                                 p.inUse     = entry.inUse;
@@ -1348,20 +1491,20 @@
                                 migrados++;
                             }
                         } else {
-                            // vehicleId não existe na nova base: excluir o registro
+                            // Não encontrado na nova base → excluir
                             if (!useSharePoint && p.id) await deletePrestadorLocal(p.id);
                             excluidos++;
                         }
                     }
 
-                    // Filtra a lista: mantém apenas os que foram migrados (vehicleId = driverId agora)
+                    // Filtra lista mantendo apenas os migrados + manuais
                     prestadoresList = prestadoresList.filter(p => {
                         const vid = parseInt(p.vehicleId);
                         if (isNaN(vid) || String(p.vehicleId).startsWith('M')) return true;
                         return idsNaBase.has(vid);
                     });
 
-                    // Cria registros para entradas da nova base sem match (motoristas novos)
+                    // Cria registros novos para driverIds sem match
                     for (const entry of rowsValidos) {
                         if (!matchedDriverIds.has(entry.driverId)) {
                             const novo = {
@@ -1434,9 +1577,11 @@
 
                 if (useSharePoint) {
                     sortPrestadores();
+                    await sincronizarLideres();
                     await savePrestadoresSP_internal();
                     await loadPrestadoresFromSharePoint();
                 } else {
+                    await sincronizarLideres();
                     await loadPrestadoresLocal();
                 }
                 reprocessExtractedResults();
@@ -1513,11 +1658,17 @@
                     data = new Date(data.getFullYear(), data.getMonth(), data.getDate());
                     return {
                         data,
-                        vehicleId: parseInt(r[1]),    // ID Veículo (mantido)
-                        driverId:  parseInt(r[5]),    // ID Motorista ← novo campo chave
-                        time: (r[2] || '').toString().trim(),
-                        nome: (r[3] || '').toString().trim(),
-                        totalMotorista: parseFloat(r[10]) || 0  // coluna 10 na nova estrutura
+                        vehicleId:      parseInt(r[1]),
+                        time:           (r[2] || '').toString().trim(),
+                        nome:           (r[3] || '').toString().trim(),
+                        rota:           r[4] ? String(r[4]).trim() : '',
+                        driverId:       parseInt(r[5]),
+                        valorRotas:     parseFloat(r[6]) || 0,
+                        ajuste:         parseFloat(r[7]) || 0,
+                        adicional:      parseFloat(r[8]) || 0,
+                        suporte:        parseFloat(r[9]) || 0,
+                        totalMotorista: parseFloat(r[10]) || 0,
+                        comissao:       parseFloat(r[11]) || 0,
                     };
                 }).filter(r => !isNaN(r.driverId));
 
@@ -1549,7 +1700,13 @@
                 const data = await resp.json();
                 recebivelData = (data.recebivel || []).map(r => ({
                     ...r,
-                    data: new Date(r.data)
+                    data: new Date(r.data),
+                    valorRotas:  r.valorRotas  || 0,
+                    ajuste:      r.ajuste      || 0,
+                    adicional:   r.adicional   || 0,
+                    suporte:     r.suporte     || 0,
+                    comissao:    r.comissao    || 0,
+                    rota:        r.rota        || '',
                 }));
                 console.log(`✅ Recebível SP: ${recebivelData.length} registros`);
                 document.getElementById('recebivelStatus').textContent =
@@ -1792,24 +1949,32 @@
         }
 
         function updatePrestadoresUI() {
-            const ativos = prestadoresList.filter(p => p.inUse !== false);
+            const ativos = prestadoresList.filter(p => p.inUse !== false && p.tipo !== 'lider');
             document.getElementById('prestadoresCount').textContent = ativos.length;
             document.getElementById('prestadoresSavedCount').textContent = ativos.length;
+            document.getElementById('lideresCount').textContent = getLideres().length;
 
             const bar = document.getElementById('prestadoresSelectAllBar');
             const container = document.getElementById('prestadoresListContainer');
             const query = (document.getElementById('prestadoresSearch')?.value || '').toLowerCase().trim();
+            const filtroPix      = document.getElementById('filtroPix')?.checked || false;
+            const filtroContrato = document.getElementById('filtroContrato')?.checked || false;
 
             const queryDigits = query.replace(/\D/g, '');
-            const visiveis = ativos.filter(p =>
-                !query ||
-                (p.nome || '').toLowerCase().includes(query) ||
-                (p.time || '').toLowerCase().includes(query) ||
-                (p.cd || '').toLowerCase().includes(query) ||
-                (p.vehicleId && String(p.vehicleId).toLowerCase().includes(query)) ||
-                (queryDigits.length > 0 && Array.isArray(p.cnpjs) &&
-                    p.cnpjs.some(c => (c.cnpj||'').replace(/\D/g,'').includes(queryDigits)))
-            );
+            const visiveis = ativos.filter(p => {
+                if (p.tipo === 'lider') return false; // líderes ficam na aba Líderes
+                if (query && !(
+                    (p.nome || '').toLowerCase().includes(query) ||
+                    (p.time || '').toLowerCase().includes(query) ||
+                    (p.cd || '').toLowerCase().includes(query) ||
+                    (p.vehicleId && String(p.vehicleId).toLowerCase().includes(query)) ||
+                    (queryDigits.length > 0 && Array.isArray(p.cnpjs) &&
+                        p.cnpjs.some(c => (c.cnpj||'').replace(/\D/g,'').includes(queryDigits)))
+                )) return false;
+                if (filtroPix && !(Array.isArray(p.cnpjs) && p.cnpjs.some(c => c.chavePix && c.chavePix.trim()))) return false;
+                if (filtroContrato && !p.contrato) return false;
+                return true;
+            });
 
             if (ativos.length === 0) {
                 container.innerHTML = '<p class="text-sm text-gray-400 text-center py-10">Nenhum motorista ativo. Importe a planilha base.</p>';
@@ -1946,36 +2111,7 @@
         // FILTRO POR TIME
         // ========================================
 
-        let _filtroTimeAtivo = '';
 
-        function getNotasFiltradas() {
-            if (!_filtroTimeAtivo) return extractedResults;
-            return extractedResults.filter(r => getTimesNota(r).includes(_filtroTimeAtivo));
-        }
-
-        function atualizarOpcoesTime() {
-            const select = document.getElementById('filtroTime');
-            const anterior = select.value;
-            const times = new Set();
-            extractedResults.forEach(r => getTimesNota(r).forEach(t => times.add(t)));
-            select.innerHTML = '<option value="">Todos os times</option>';
-            [...times].sort().forEach(t => {
-                const opt = document.createElement('option');
-                opt.value = t; opt.textContent = t;
-                if (t === anterior) opt.selected = true;
-                select.appendChild(opt);
-            });
-        }
-
-        function aplicarFiltroTime() {
-            _filtroTimeAtivo = document.getElementById('filtroTime').value;
-            const tbody = document.getElementById('resultsBody');
-            tbody.innerHTML = '';
-            const filtradas = getNotasFiltradas();
-            filtradas.forEach(r => renderRow(r));
-            updateCoverageStats();
-            resetNotasSelecao();
-        }
 
         // ========================================
         // SELEÇÃO + EXCLUSÃO DE NOTAS
@@ -2075,7 +2211,7 @@
 
             const totalLiquido = filtradas.reduce((sum, r) => sum + (r.vLiquido || 0), 0);
             const totalServico = filtradas.reduce((sum, r) => sum + (r.vServico || 0), 0);
-            const label = `${totalNotas} nota${totalNotas !== 1 ? 's' : ''}${_filtroTimeAtivo ? ` · ${_filtroTimeAtivo}` : ''}`;
+            const label = `${totalNotas} nota${totalNotas !== 1 ? 's' : ''}${_filtroTimesAtivos.size > 0 ? ` · ${[..._filtroTimesAtivos].join(', ')}` : ''}`;
 
             document.getElementById('totalLiquidoPanel').classList.remove('hidden');
             document.getElementById('totalLiquidoValue').textContent = fmtMoney(totalLiquido);
@@ -2116,7 +2252,12 @@
                     : null;
                 // Se ainda não tinha motoristas associados, preencher com responsável
                 if ((!result.motoristasNaNota || result.motoristasNaNota.length === 0) && result.responsavel) {
-                    result.motoristasNaNota = [{ ...result.responsavel }];
+                    // Se o responsável é líder, pré-preencher com motoristasVinculados do líder
+                    if (prestadorResp?.tipo === 'lider' && (prestadorResp.motoristasVinculados || []).length > 0) {
+                        result.motoristasNaNota = prestadorResp.motoristasVinculados.map(m => ({...m}));
+                    } else {
+                        result.motoristasNaNota = [{ ...result.responsavel }];
+                    }
                 }
                 // Se havia exatamente 1 motorista (auto-preenchido) e o CNPJ aponta para outro, corrigir
                 else if (
@@ -3105,18 +3246,7 @@
             const isHidden = modal.classList.contains('hidden');
             modal.classList.toggle('hidden');
             if (isHidden) {
-                // Popular filtro de times — computa dinamicamente
-                const times = new Set();
-                extractedResults.forEach(r => getTimesNota(r).forEach(t => times.add(t)));
-                const sel = document.getElementById('concilFiltroTime');
-                const anterior = sel.value;
-                sel.innerHTML = '<option value="">Todos</option>';
-                [...times].sort().forEach(t => {
-                    const o = document.createElement('option');
-                    o.value = t; o.textContent = t;
-                    if (t === anterior) o.selected = true;
-                    sel.appendChild(o);
-                });
+                popularConcilTimes();
                 // Datas padrão: mês atual
                 const hoje = new Date();
                 const y = hoje.getFullYear(), m = String(hoje.getMonth()+1).padStart(2,'0');
@@ -3156,7 +3286,6 @@
         function executarConciliacao() {
             const inicio = document.getElementById('concilDataInicio').value;
             const fim    = document.getElementById('concilDataFim').value;
-            const timeF  = document.getElementById('concilFiltroTime').value;
             const tolerancia = parseFloat(document.getElementById('concilTolerancia').value) || 0;
 
             if (!inicio || !fim) { alert('Defina o período de conciliação.'); return; }
@@ -3168,44 +3297,51 @@
             const fmtMoney   = (v) => (v||0).toLocaleString('pt-BR', {style:'currency', currency:'BRL'});
             const fmtPct     = (v) => v === null ? '-' : `${v > 0 ? '+' : ''}${v.toFixed(1)}%`;
 
-            // O período filtra o RECEBÍVEL (qual quinzena somar), NÃO as notas.
-            // Notas são filtradas apenas por time (se selecionado).
-            const notasFiltradas = timeF
-                ? extractedResults.filter(r => getTimesNota(r).includes(timeF))
+            // Filtro de times via checkbox
+            const notasFiltradas = _concilTimesAtivos.size > 0
+                ? extractedResults.filter(r => getTimesNota(r).some(t => _concilTimesAtivos.has(t)))
                 : [...extractedResults];
 
             let ok = 0, divergente = 0, semDados = 0;
             _concilRows = [];
             _concilSort = { field: null, dir: 1 };
-            // Reset sort icons
             ['responsavel','valorNota','diferenca'].forEach(f => {
                 const el = document.getElementById(`concil-sort-${f}`);
                 if (el) { el.textContent = '↕'; el.className = 'text-gray-400'; }
             });
 
             notasFiltradas.forEach(nota => {
-                // Garantir que motoristasNaNota exista mesmo em notas antigas
-                const motoristas = nota.motoristasNaNota
+                let motoristasEfetivos = nota.motoristasNaNota
                     || (nota.responsavel ? [nota.responsavel] : [])
                     || [];
-
-                // Se não há motoristas associados, tenta resolver pelo CNPJ em tempo real
-                let motoristasEfetivos = motoristas;
                 if (motoristasEfetivos.length === 0 && nota.cnpj) {
                     const p = findPrestadorByCnpj(nota.cnpj);
                     if (p) motoristasEfetivos = [{ vehicleId: p.vehicleId, nome: p.nome }];
                 }
 
                 const valorNota = nota.vLiquido || 0;
+                const respNome  = nota.responsavel?.nome || nota.prestador || '-';
 
-                // Somar valor devido por driverId (motoristasNaNota já normalizado com driverIds)
+                // Detectar se o responsável é um líder
+                const prestResp = nota.cnpj ? findPrestadorByCnpj(nota.cnpj) : null;
+                const isLider   = prestResp?.tipo === 'lider';
+
                 let valorDevido = 0;
                 let temDados = false;
-                motoristasEfetivos.forEach(m => {
-                    if (!m.vehicleId) return;
-                    const v = getValorDevidoPorPeriodo(parseInt(m.vehicleId), dataInicio, dataFim);
-                    if (v > 0) { valorDevido += v; temDados = true; }
-                });
+                let driverIdParaDetalhe = null;
+
+                if (isLider) {
+                    valorDevido = getValorDevidoLider(prestResp, motoristasEfetivos, dataInicio, dataFim);
+                    if (valorDevido > 0) temDados = true;
+                    driverIdParaDetalhe = null; // líderes não têm detalhe individual (comissão de time)
+                } else {
+                    motoristasEfetivos.forEach(m => {
+                        if (!m.vehicleId) return;
+                        const vid = parseInt(m.vehicleId);
+                        const v = getValorDevidoPorPeriodo(vid, dataInicio, dataFim);
+                        if (v > 0) { valorDevido += v; temDados = true; if (!driverIdParaDetalhe) driverIdParaDetalhe = vid; }
+                    });
+                }
 
                 let status, statusClass, diff = null, diffPct = null;
                 if (motoristasEfetivos.length === 0) {
@@ -3223,22 +3359,33 @@
                 }
 
                 const nomesMotoristas = motoristasEfetivos.map(m => m.nome).join(', ') || '-';
-                const respNome = nota.responsavel?.nome || nota.prestador || '-';
                 const diffColor = diff === null ? ''
                     : Math.abs(diff) > tolerancia
                         ? (diff > 0 ? 'text-red-600 font-semibold' : 'text-orange-600 font-semibold')
                         : 'text-green-600';
-
+                const liderBadge = isLider
+                    ? `<span class="inline-block w-2 h-2 rounded-full bg-purple-500 mr-1"></span>`
+                    : '';
                 const dataEmissaoDisplay = nota.dataEmissao || '-';
+
+                // Célula Valor Devido: clicável para detalhe (apenas não-líderes com driverId)
+                const valorDevidoCell = temDados
+                    ? (driverIdParaDetalhe
+                        ? `<td class="px-3 py-2 text-right font-mono text-blue-700 underline cursor-pointer hover:text-blue-900"
+                              onclick="abrirConcilDetalhe(${driverIdParaDetalhe}, '${respNome.replace(/'/g,"\\'")}', new Date('${dataInicio.toISOString()}'), new Date('${dataFim.toISOString()}'))">
+                              ${fmtMoney(valorDevido)}</td>`
+                        : `<td class="px-3 py-2 text-right font-mono">${fmtMoney(valorDevido)}</td>`)
+                    : `<td class="px-3 py-2 text-right text-gray-400">-</td>`;
+
                 const tr = document.createElement('tr');
-                tr.className = 'hover:bg-gray-50 transition-colors';
+                tr.className = `hover:bg-gray-50 transition-colors${isLider ? ' bg-purple-50/30' : ''}`;
                 tr.innerHTML = `
                     <td class="px-3 py-2 truncate max-w-[130px]" title="${nota.arquivo}">${nota.arquivo}</td>
-                    <td class="px-3 py-2 text-gray-700 truncate max-w-[120px]">${respNome}</td>
+                    <td class="px-3 py-2 text-gray-700 truncate max-w-[120px]">${liderBadge}${respNome}</td>
                     <td class="px-3 py-2 text-gray-600 truncate max-w-[160px]" title="${nomesMotoristas}">${nomesMotoristas}</td>
                     <td class="px-3 py-2 text-center text-gray-500 text-[11px]">${dataEmissaoDisplay}</td>
                     <td class="px-3 py-2 text-right font-mono">${fmtMoney(valorNota)}</td>
-                    <td class="px-3 py-2 text-right font-mono">${temDados ? fmtMoney(valorDevido) : '-'}</td>
+                    ${valorDevidoCell}
                     <td class="px-3 py-2 text-right font-mono ${diffColor}">${diff !== null ? fmtMoney(diff) : '-'}</td>
                     <td class="px-3 py-2 text-right ${diffColor}">${fmtPct(diffPct)}</td>
                     <td class="px-3 py-2 text-center"><span class="px-2 py-0.5 rounded-full text-[10px] font-semibold ${statusClass}">${status}</span></td>
@@ -3257,6 +3404,623 @@
             document.getElementById('concilSemDados').textContent = semDados;
             document.getElementById('concilPlaceholder').classList.add('hidden');
             document.getElementById('concilTabela').classList.remove('hidden');
+        }
+
+        // ========================================
+        // FILTRO DE TIMES — DROPDOWN COM CHECKBOX
+        // ========================================
+
+        let _filtroTimesAtivos = new Set();
+        let _concilTimesAtivos = new Set();
+
+        function toggleFiltroTimeDropdown() {
+            const dd = document.getElementById('filtroTimeDropdown');
+            dd.classList.toggle('hidden');
+            if (!dd.classList.contains('hidden')) {
+                document.addEventListener('click', closeFiltroTimeOnOutside, { once: true });
+            }
+        }
+        function closeFiltroTimeOnOutside(e) {
+            const wrapper = document.getElementById('filtroTimeWrapper');
+            if (!wrapper || !wrapper.contains(e.target)) {
+                document.getElementById('filtroTimeDropdown')?.classList.add('hidden');
+            }
+        }
+        function onFiltroTimeTodosChange(checked) {
+            document.querySelectorAll('#filtroTimeCheckboxes input[type=checkbox]').forEach(cb => cb.checked = checked);
+            _filtroTimesAtivos = checked ? new Set() : new Set();
+            if (!checked) {
+                // nenhum selecionado = todos (padrão)
+            }
+            atualizarFiltroTimeBtnLabel();
+            aplicarFiltroTimeExtrator();
+        }
+        function onFiltroTimeCbChange(time, checked) {
+            if (checked) _filtroTimesAtivos.add(time);
+            else _filtroTimesAtivos.delete(time);
+            // se todos marcados → equivale a "Todos"
+            const allCbs = document.querySelectorAll('#filtroTimeCheckboxes input[type=checkbox]');
+            const allChecked = [...allCbs].every(cb => cb.checked);
+            document.getElementById('filtroTimeTodos').checked = allChecked;
+            if (allChecked) _filtroTimesAtivos.clear();
+            atualizarFiltroTimeBtnLabel();
+            aplicarFiltroTimeExtrator();
+        }
+        function atualizarFiltroTimeBtnLabel() {
+            const lbl = document.getElementById('filtroTimeBtnLabel');
+            if (!lbl) return;
+            if (_filtroTimesAtivos.size === 0) lbl.textContent = 'Todos os times';
+            else if (_filtroTimesAtivos.size === 1) lbl.textContent = [..._filtroTimesAtivos][0];
+            else lbl.textContent = `${_filtroTimesAtivos.size} times`;
+        }
+        function aplicarFiltroTimeExtrator() {
+            const tbody = document.getElementById('resultsBody');
+            tbody.innerHTML = '';
+            getNotasFiltradas().forEach(r => renderRow(r));
+            updateCoverageStats();
+            resetNotasSelecao();
+        }
+
+        function getNotasFiltradas() {
+            if (_filtroTimesAtivos.size === 0) return extractedResults;
+            return extractedResults.filter(r => getTimesNota(r).some(t => _filtroTimesAtivos.has(t)));
+        }
+
+        function atualizarOpcoesTime() {
+            const container = document.getElementById('filtroTimeCheckboxes');
+            if (!container) return;
+            const times = new Set();
+            extractedResults.forEach(r => getTimesNota(r).forEach(t => { if(t) times.add(t); }));
+            container.innerHTML = '';
+            [...times].sort().forEach(t => {
+                const ativo = _filtroTimesAtivos.size === 0 || _filtroTimesAtivos.has(t);
+                container.innerHTML += `<label class="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 cursor-pointer text-xs text-gray-700">
+                    <input type="checkbox" ${ativo ? 'checked' : ''} class="w-3.5 h-3.5 accent-frexco" onchange="onFiltroTimeCbChange('${t}', this.checked)">
+                    ${t}
+                </label>`;
+            });
+            const allCbs = [...container.querySelectorAll('input')];
+            const allChecked = allCbs.every(cb => cb.checked);
+            const todosEl = document.getElementById('filtroTimeTodos');
+            if (todosEl) todosEl.checked = allChecked || allCbs.length === 0;
+            atualizarFiltroTimeBtnLabel();
+        }
+
+        function aplicarFiltroTime() { /* legacy no-op */ }
+        function toggleFiltroTime() { /* legacy no-op */ }
+
+        // Conciliação time filter
+        function toggleConcilTimeDropdown() {
+            const dd = document.getElementById('concilTimeDropdown');
+            dd.classList.toggle('hidden');
+            if (!dd.classList.contains('hidden')) {
+                document.addEventListener('click', closeConcilTimeOnOutside, { once: true });
+            }
+        }
+        function closeConcilTimeOnOutside(e) {
+            const w = document.getElementById('concilFiltroTimeWrapper');
+            if (!w || !w.contains(e.target)) document.getElementById('concilTimeDropdown')?.classList.add('hidden');
+        }
+        function onConcilTimeTodosChange(checked) {
+            document.querySelectorAll('#concilTimeCheckboxes input').forEach(cb => cb.checked = checked);
+            _concilTimesAtivos = new Set();
+            atualizarConcilTimeBtnLabel();
+        }
+        function onConcilTimeCbChange(time, checked) {
+            if (checked) _concilTimesAtivos.add(time);
+            else _concilTimesAtivos.delete(time);
+            const allCbs = document.querySelectorAll('#concilTimeCheckboxes input');
+            const allChecked = [...allCbs].every(cb => cb.checked);
+            document.getElementById('concilTimeTodos').checked = allChecked;
+            if (allChecked) _concilTimesAtivos.clear();
+            atualizarConcilTimeBtnLabel();
+        }
+        function atualizarConcilTimeBtnLabel() {
+            const lbl = document.getElementById('concilTimeBtnLabel');
+            if (!lbl) return;
+            if (_concilTimesAtivos.size === 0) lbl.textContent = 'Todos';
+            else if (_concilTimesAtivos.size === 1) lbl.textContent = [..._concilTimesAtivos][0];
+            else lbl.textContent = `${_concilTimesAtivos.size} times`;
+        }
+        function popularConcilTimes() {
+            const container = document.getElementById('concilTimeCheckboxes');
+            if (!container) return;
+            const times = new Set();
+            extractedResults.forEach(r => getTimesNota(r).forEach(t => { if(t) times.add(t); }));
+            container.innerHTML = '';
+            [...times].sort().forEach(t => {
+                container.innerHTML += `<label class="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 cursor-pointer text-xs text-gray-700">
+                    <input type="checkbox" checked class="w-3.5 h-3.5 accent-gray-600" onchange="onConcilTimeCbChange('${t}', this.checked)">
+                    ${t}
+                </label>`;
+            });
+            document.getElementById('concilTimeTodos').checked = true;
+            _concilTimesAtivos.clear();
+            atualizarConcilTimeBtnLabel();
+        }
+
+        // ========================================
+        // TABS PRESTADORES
+        // ========================================
+
+        function switchPrestadoresTab(tab) {
+            _prestadoresTab = tab;
+            const bodyMotoristas = document.getElementById('painel-motoristas');
+            const bodyLideres    = document.getElementById('painel-lideres');
+            const tabM = document.getElementById('tabMotoristas');
+            const tabL = document.getElementById('tabLideres');
+            if (tab === 'motoristas') {
+                bodyMotoristas?.classList.remove('hidden');
+                bodyLideres?.classList.add('hidden');
+                tabM?.classList.add('border-frexco', 'text-frexco');
+                tabM?.classList.remove('border-transparent', 'text-gray-500');
+                tabL?.classList.add('border-transparent', 'text-gray-500');
+                tabL?.classList.remove('border-purple-500', 'text-purple-600');
+            } else {
+                bodyMotoristas?.classList.add('hidden');
+                bodyLideres?.classList.remove('hidden');
+                tabL?.classList.add('border-purple-500', 'text-purple-600');
+                tabL?.classList.remove('border-transparent', 'text-gray-500');
+                tabM?.classList.add('border-transparent', 'text-gray-500');
+                tabM?.classList.remove('border-frexco', 'text-frexco');
+                renderLideresList();
+                lucide.createIcons();
+            }
+        }
+
+        // ========================================
+        // LÍDERES — CRUD E SINCRONIZAÇÃO
+        // ========================================
+
+        function nextLiderId() {
+            const existing = prestadoresList
+                .map(p => String(p.vehicleId || ''))
+                .filter(id => /^L\d+$/.test(id))
+                .map(id => parseInt(id.slice(1)))
+                .filter(n => !isNaN(n));
+            const max = existing.length > 0 ? Math.max(...existing) : 0;
+            return 'L' + (max + 1);
+        }
+
+        function getLideres() {
+            return prestadoresList.filter(p => p.tipo === 'lider');
+        }
+
+        // Sincroniza líderes com os times presentes na base de motoristas
+        // Chamado após importarBaseMotoristasExcel
+        async function sincronizarLideresManual() {
+            if (prestadoresList.filter(p => p.tipo !== 'lider').length === 0) {
+                alert('Nenhuma base de motoristas carregada. Importe a base primeiro.');
+                return;
+            }
+            const { criados, excluidos } = await sincronizarLideres();
+            if (useSharePoint) {
+                await savePrestadoresSP_internal();
+                await loadPrestadoresFromSharePoint();
+            }
+            updatePrestadoresUI();
+            renderLideresList();
+            alert(`✅ Líderes sincronizados!\n\n${criados} criado(s)\n${excluidos} excluído(s)\n${getLideres().length} líderes ativos`);
+            switchPrestadoresTab('lideres');
+        }
+
+        async function sincronizarLideres() {
+            const times = new Set(
+                prestadoresList
+                    .filter(p => p.tipo !== 'lider' && p.inUse !== false && p.time)
+                    .map(p => p.time.trim())
+                    .filter(Boolean)
+            );
+
+            let criados = 0, excluidos = 0;
+
+            // Excluir líderes cujo time não existe mais na base
+            const lideresAtuais = getLideres();
+            for (const lider of lideresAtuais) {
+                if (!times.has(lider.timeVinculado)) {
+                    const idx = prestadoresList.indexOf(lider);
+                    if (idx !== -1) prestadoresList.splice(idx, 1);
+                    excluidos++;
+                }
+            }
+
+            // Criar líderes para times novos
+            for (const time of times) {
+                const jaExiste = prestadoresList.some(p => p.tipo === 'lider' && p.timeVinculado === time);
+                if (!jaExiste) {
+                    const novoLider = {
+                        vehicleId: nextLiderId(),
+                        nome: time,
+                        tipo: 'lider',
+                        timeVinculado: time,
+                        motoristasVinculados: [],
+                        cd: '', time: '', inUse: true,
+                        cnpjs: [], contrato: null,
+                        fromSharePoint: useSharePoint,
+                        dataAdicao: new Date().toISOString()
+                    };
+                    prestadoresList.push(novoLider);
+                    criados++;
+                }
+            }
+
+            if (criados > 0 || excluidos > 0) {
+                console.log(`✅ Líderes: ${criados} criados, ${excluidos} excluídos`);
+            }
+            document.getElementById('lideresCount').textContent = getLideres().length;
+            return { criados, excluidos };
+        }
+
+        // Render lista de líderes
+        function renderLideresList() {
+            const lideres = getLideres();
+            const query = (document.getElementById('lideresSearch')?.value || '').toLowerCase().trim();
+            const container = document.getElementById('lideresListContainer');
+            if (!container) return;
+            document.getElementById('lideresCount').textContent = lideres.length;
+            document.getElementById('lideresListCount').textContent = lideres.length;
+
+            const visiveis = lideres.filter(l => {
+                if (!query) return true;
+                if ((l.nome || '').toLowerCase().includes(query)) return true;
+                const qd = query.replace(/\D/g, '');
+                if (qd && Array.isArray(l.cnpjs) && l.cnpjs.some(c => (c.cnpj||'').replace(/\D/g,'').includes(qd))) return true;
+                return false;
+            });
+
+            if (visiveis.length === 0) {
+                container.innerHTML = '<p class="text-sm text-gray-400 text-center py-10">Nenhum líder encontrado.</p>';
+                return;
+            }
+
+            const fmtMoney = v => (v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+            container.innerHTML = visiveis.map(l => {
+                const index = prestadoresList.indexOf(l);
+                const cnpjHtml = (Array.isArray(l.cnpjs) && l.cnpjs.length > 0)
+                    ? l.cnpjs.map(c => `<div class="flex items-center gap-1"><span class="text-xs font-mono text-gray-600 bg-gray-100 px-1 py-0.5 rounded">${c.cnpj||'—'}</span>${c.chavePix ? `<span class="text-xs text-frexco" title="${c.chavePix}">→ ${c.chavePix}</span>` : ''}</div>`).join('')
+                    : `<span class="text-xs text-orange-500 bg-orange-50 px-1.5 py-0.5 rounded border border-orange-200">⚠ sem CNPJ</span>`;
+                const contratoHtml = l.contrato
+                    ? `<div class="flex items-center gap-1">
+                        <span class="text-xs text-green-700 bg-green-50 px-2 py-0.5 rounded-full border border-green-200 truncate max-w-[100px]" title="${l.contrato.nomeArquivo}">✓ ${l.contrato.nomeArquivo}</span>
+                        <button onclick="viewContratoLider(${index})" class="p-1 text-blue-600 hover:bg-blue-50 rounded" title="Ver"><svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+                        <button onclick="removeContratoLider(${index})" class="p-1 text-red-400 hover:bg-red-50 rounded" title="Remover"><svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+                       </div>`
+                    : `<button onclick="uploadContratoLider(${index})" class="flex items-center gap-1 text-xs text-blue-600 hover:bg-blue-50 px-2 py-1 rounded-lg border border-blue-200">↑ Anexar PDF</button>`;
+                const motoristasHtml = (l.motoristasVinculados || []).length > 0
+                    ? l.motoristasVinculados.map(m => `<span class="inline-block bg-purple-50 text-purple-700 border border-purple-200 rounded px-1.5 py-0.5 text-[10px]">${m.nome}</span>`).join('')
+                    : `<span class="text-xs text-gray-400 italic">Nenhum vinculado</span>`;
+                return `<div class="grid grid-cols-12 gap-2 items-start p-3 bg-purple-50 hover:bg-purple-100/60 rounded-xl border border-purple-200 transition-colors text-sm">
+                    <div class="col-span-3 min-w-0">
+                        <div class="flex items-center gap-1.5">
+                            <span class="inline-block w-2 h-2 rounded-full bg-purple-500 flex-shrink-0"></span>
+                            <p class="font-semibold text-gray-900 truncate">${l.nome}</p>
+                        </div>
+                        <span class="text-xs text-purple-600 bg-purple-100 px-1.5 py-0.5 rounded mt-0.5 inline-block">Líder · ${l.timeVinculado}</span>
+                        <span class="text-xs text-gray-400 block">#${l.vehicleId}</span>
+                    </div>
+                    <div class="col-span-3 min-w-0 space-y-0.5">${cnpjHtml}</div>
+                    <div class="col-span-2 min-w-0">${contratoHtml}</div>
+                    <div class="col-span-2 min-w-0 text-[10px] flex flex-wrap gap-1">${motoristasHtml}</div>
+                    <div class="col-span-2 flex items-start justify-end gap-1 pt-0.5">
+                        <button onclick="editLiderEntry(${index})" class="p-1.5 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded-lg" title="Editar"><svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        // Edit líder form
+        let _liderEditIdx = null;
+        let _liderMotoristasTemp = [];
+
+        function editLiderEntry(index) {
+            _liderEditIdx = index;
+            const l = prestadoresList[index];
+            _liderMotoristasTemp = [...(l.motoristasVinculados || [])];
+            document.getElementById('liderNome').value = l.nome;
+            document.getElementById('liderTime').value = l.timeVinculado;
+            document.getElementById('liderFormTitle').textContent = `Editar Líder — ${l.nome}`;
+            // CNPJs
+            const container = document.getElementById('cnpjRowsLiderContainer');
+            container.innerHTML = '';
+            const cnpjs = (l.cnpjs || []).length > 0 ? l.cnpjs : [{ cnpj: '', chavePix: '' }];
+            cnpjs.forEach(c => adicionarCnpjRowLiderData(c.cnpj, c.chavePix));
+            renderLiderMotoristasVinculados();
+            document.getElementById('liderForm').classList.remove('hidden');
+            document.getElementById('liderForm').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function cancelLiderForm() {
+            _liderEditIdx = null;
+            _liderMotoristasTemp = [];
+            document.getElementById('liderForm').classList.add('hidden');
+        }
+
+        function adicionarCnpjRowLiderData(cnpj = '', pix = '') {
+            const container = document.getElementById('cnpjRowsLiderContainer');
+            const idx = container.querySelectorAll('.cnpj-lider-row').length;
+            const div = document.createElement('div');
+            div.className = 'cnpj-lider-row flex gap-2 items-center';
+            div.innerHTML = `<input type="text" placeholder="CNPJ" value="${cnpj}" class="cnpj-lider-input flex-1 px-2 py-1.5 border border-gray-300 rounded-lg text-xs focus:ring-1 focus:ring-purple-400 outline-none font-mono">
+                <input type="text" placeholder="Chave PIX" value="${pix}" class="pix-lider-input flex-1 px-2 py-1.5 border border-gray-300 rounded-lg text-xs focus:ring-1 focus:ring-purple-400 outline-none">
+                <button onclick="this.closest('.cnpj-lider-row').remove()" class="text-red-400 hover:text-red-600 text-xs px-2 py-1.5 rounded flex-shrink-0">✕</button>`;
+            container.appendChild(div);
+        }
+
+        function addCnpjRowLider() { adicionarCnpjRowLiderData('', ''); }
+
+        function renderLiderMotoristasVinculados() {
+            const container = document.getElementById('liderMotoristasVinculados');
+            if (!container) return;
+            container.innerHTML = _liderMotoristasTemp.map((m, i) =>
+                `<span class="inline-flex items-center gap-1 bg-purple-100 text-purple-800 border border-purple-200 rounded-full px-2 py-0.5 text-xs font-medium">
+                    ${m.nome}
+                    <button onclick="removerMotoristaLider(${i})" class="text-purple-400 hover:text-purple-700 leading-none ml-0.5">✕</button>
+                </span>`
+            ).join('');
+        }
+
+        function removerMotoristaLider(idx) {
+            _liderMotoristasTemp.splice(idx, 1);
+            renderLiderMotoristasVinculados();
+        }
+
+        function filtrarMotoristasLider(query) {
+            const sugestoes = document.getElementById('liderMotoristaSugestoes');
+            if (!query.trim()) { sugestoes.classList.add('hidden'); return; }
+            const motoristas = prestadoresList.filter(p =>
+                p.tipo !== 'lider' && p.inUse !== false &&
+                (p.nome || '').toLowerCase().includes(query.toLowerCase()) &&
+                !_liderMotoristasTemp.some(m => m.vehicleId === p.vehicleId)
+            ).slice(0, 8);
+            if (motoristas.length === 0) { sugestoes.classList.add('hidden'); return; }
+            sugestoes.innerHTML = motoristas.map(m =>
+                `<div onclick="adicionarMotoristaLider('${m.vehicleId}', '${(m.nome||'').replace(/'/g,"\\'")}', this)"
+                    class="px-3 py-2 hover:bg-purple-50 cursor-pointer text-sm text-gray-700 flex items-center gap-2">
+                    <span class="font-medium">${m.nome}</span>
+                    ${m.time ? `<span class="text-xs text-blue-600 bg-blue-50 px-1.5 rounded">${m.time}</span>` : ''}
+                </div>`
+            ).join('');
+            sugestoes.classList.remove('hidden');
+        }
+
+        function adicionarMotoristaLider(vehicleId, nome) {
+            _liderMotoristasTemp.push({ vehicleId, nome });
+            document.getElementById('liderMotoristaBusca').value = '';
+            document.getElementById('liderMotoristaSugestoes').classList.add('hidden');
+            renderLiderMotoristasVinculados();
+        }
+
+        async function saveLiderEntry() {
+            if (_liderEditIdx === null) return;
+            const l = prestadoresList[_liderEditIdx];
+
+            // Coletar CNPJs
+            const cnpjRows = document.querySelectorAll('#cnpjRowsLiderContainer .cnpj-lider-row');
+            const novosCnpjs = Array.from(cnpjRows).map(r => ({
+                cnpj: r.querySelector('.cnpj-lider-input').value.trim(),
+                chavePix: r.querySelector('.pix-lider-input').value.trim()
+            })).filter(c => c.cnpj);
+
+            // Validar unicidade de CNPJ
+            const trocas = [];
+            for (const nc of novosCnpjs) {
+                const outro = prestadoresList.find(p => p !== l && Array.isArray(p.cnpjs) && p.cnpjs.some(c => c.cnpj === nc.cnpj));
+                if (outro) {
+                    outro.cnpjs = outro.cnpjs.filter(c => c.cnpj !== nc.cnpj);
+                    trocas.push(outro.nome);
+                }
+            }
+
+            l.cnpjs = novosCnpjs;
+            l.motoristasVinculados = [..._liderMotoristasTemp];
+
+            if (useSharePoint) {
+                await savePrestadoresSP_internal();
+                await loadPrestadoresFromSharePoint();
+            } else {
+                await savePrestadorLocal(l);
+            }
+            reprocessExtractedResults();
+            cancelLiderForm();
+            renderLideresList();
+
+            if (trocas.length > 0) {
+                alert(`⚠️ CNPJ movido de: ${trocas.join(', ')}\n\nO(s) registro(s) acima perdeu(ram) o CNPJ que foi alocado para ${l.nome}.`);
+            }
+        }
+
+        // Contrato do líder
+        function uploadContratoLider(index) {
+            const input = document.getElementById('contratoLiderUploadInput');
+            input.onchange = async (e) => {
+                const file = e.target.files[0]; if (!file) return;
+                const l = prestadoresList[index];
+                const dataUrl = await new Promise(res => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(file); });
+                l.contrato = { nomeArquivo: file.name, fileData: dataUrl, dataUpload: new Date().toISOString() };
+                if (useSharePoint) { await savePrestadoresSP_internal(); await loadPrestadoresFromSharePoint(); }
+                else await savePrestadorLocal(l);
+                renderLideresList();
+                input.value = '';
+            };
+            input.click();
+        }
+        function viewContratoLider(index) {
+            const l = prestadoresList[index];
+            if (!l?.contrato?.fileData) return;
+            const w = window.open();
+            w.document.write(`<iframe src="${l.contrato.fileData}" style="width:100%;height:100vh;border:none;"></iframe>`);
+        }
+        async function removeContratoLider(index) {
+            const l = prestadoresList[index];
+            if (!l?.contrato) return;
+            if (!confirm('Remover contrato?')) return;
+            l.contrato = null;
+            if (useSharePoint) { await savePrestadoresSP_internal(); await loadPrestadoresFromSharePoint(); }
+            else await savePrestadorLocal(l);
+            renderLideresList();
+        }
+
+        // ========================================
+        // CNPJ ÚNICO GLOBAL — notificação ao editar manualmente
+        // (importação em massa notifica apenas totais — tratado em importarCnpjPixExcel)
+        // ========================================
+
+        function enforceUniqueCnpj(titular, cnpjStr) {
+            // Remove o CNPJ de qualquer outro registro que o tenha
+            const outro = prestadoresList.find(p => p !== titular &&
+                Array.isArray(p.cnpjs) && p.cnpjs.some(c => c.cnpj === cnpjStr));
+            if (outro) {
+                outro.cnpjs = outro.cnpjs.filter(c => c.cnpj !== cnpjStr);
+                return outro.nome;
+            }
+            return null;
+        }
+
+        // ========================================
+        // REPROCESS — pré-preenchimento de motoristas do líder
+        // ========================================
+
+        // Sobrescreve o reprocess para lidar com líderes
+        const _origReprocess = reprocessExtractedResults;
+
+        // ========================================
+        // CONCILIAÇÃO — valor devido do líder
+        // ========================================
+
+        function getComissaoPorPeriodo(timeVinculado, dataInicio, dataFim) {
+            const ini = new Date(dataInicio.getFullYear(), dataInicio.getMonth(), dataInicio.getDate());
+            const fim = new Date(dataFim.getFullYear(),    dataFim.getMonth(),    dataFim.getDate());
+            return recebivelData
+                .filter(r => (r.time || '') === timeVinculado && r.data >= ini && r.data <= fim)
+                .reduce((sum, r) => sum + (r.comissao || 0), 0);
+        }
+
+        function getValorDevidoLider(lider, motoristasNaNota, dataInicio, dataFim) {
+            // 1. Comissão do time no período
+            const comissao = getComissaoPorPeriodo(lider.timeVinculado, dataInicio, dataFim);
+            // 2. Total Motorista dos motoristas vinculados (permanentes + da nota)
+            const vinculados = new Set([
+                ...(lider.motoristasVinculados || []).map(m => m.vehicleId),
+                ...(motoristasNaNota || []).map(m => m.vehicleId)
+            ]);
+            let totalMotoristas = 0;
+            vinculados.forEach(vid => {
+                totalMotoristas += getValorDevidoPorPeriodo(parseInt(vid), dataInicio, dataFim);
+            });
+            return comissao + totalMotoristas;
+        }
+
+        // ========================================
+        // DETALHE POR MOTORISTA NA CONCILIAÇÃO
+        // ========================================
+
+        let _concilDetalheDriverId = null;
+        let _concilDetalheNomeAtual = null;
+        let _concilDetalhePeriodoAtual = null;
+
+        function abrirConcilDetalhe(driverId, nome, dataInicio, dataFim) {
+            _concilDetalheDriverId = driverId;
+            _concilDetalheNomeAtual = nome;
+            _concilDetalhePeriodoAtual = { dataInicio, dataFim };
+
+            const ini = new Date(dataInicio.getFullYear(), dataInicio.getMonth(), dataInicio.getDate());
+            const fim = new Date(dataFim.getFullYear(),    dataFim.getMonth(),    dataFim.getDate());
+            const fmtMoney = v => (v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+            const fmtDate = d => d instanceof Date
+                ? d.toLocaleDateString('pt-BR')
+                : new Date(d).toLocaleDateString('pt-BR');
+
+            const linhas = recebivelData.filter(r => r.driverId === driverId && r.data >= ini && r.data <= fim);
+
+            document.getElementById('concilDetalheNome').textContent = nome;
+            document.getElementById('concilDetalhePeriodo').textContent =
+                `${dataInicio.toLocaleDateString('pt-BR')} — ${dataFim.toLocaleDateString('pt-BR')} · ${linhas.length} registro(s)`;
+
+            // Cards resumo
+            const total = linhas.reduce((s,r) => s + r.totalMotorista, 0);
+            const totalRotas = linhas.reduce((s,r) => s + r.valorRotas, 0);
+            const totalAjuste = linhas.reduce((s,r) => s + r.ajuste, 0);
+            document.getElementById('concilDetalheResumo').innerHTML = `
+                <div class="bg-gray-50 rounded-xl p-3 border border-gray-200 text-center">
+                    <div class="text-xs text-gray-500 mb-1">Total no período</div>
+                    <div class="text-xl font-bold text-gray-800">${fmtMoney(total)}</div>
+                </div>
+                <div class="bg-blue-50 rounded-xl p-3 border border-blue-200 text-center">
+                    <div class="text-xs text-blue-600 mb-1">Valor Rotas</div>
+                    <div class="text-xl font-bold text-blue-700">${fmtMoney(totalRotas)}</div>
+                </div>
+                <div class="bg-orange-50 rounded-xl p-3 border border-orange-200 text-center">
+                    <div class="text-xs text-orange-600 mb-1">Ajuste total</div>
+                    <div class="text-xl font-bold text-orange-700">${fmtMoney(totalAjuste)}</div>
+                </div>`;
+
+            // Tabela detalhada
+            const tbody = document.getElementById('concilDetalheBody');
+            tbody.innerHTML = '';
+            linhas.forEach(r => {
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-gray-50';
+                tr.innerHTML = `
+                    <td class="px-3 py-2">${fmtDate(r.data)}</td>
+                    <td class="px-3 py-2 text-gray-600">${r.nome || '-'}</td>
+                    <td class="px-3 py-2 text-gray-500">${r.rota || '-'}</td>
+                    <td class="px-3 py-2 text-right font-mono">${fmtMoney(r.valorRotas)}</td>
+                    <td class="px-3 py-2 text-right font-mono ${r.ajuste < 0 ? 'text-red-600' : r.ajuste > 0 ? 'text-green-600' : 'text-gray-400'}">${fmtMoney(r.ajuste)}</td>
+                    <td class="px-3 py-2 text-right font-mono text-gray-500">${fmtMoney(r.adicional)}</td>
+                    <td class="px-3 py-2 text-right font-mono text-gray-500">${fmtMoney(r.suporte)}</td>
+                    <td class="px-3 py-2 text-right font-bold font-mono text-gray-800">${fmtMoney(r.totalMotorista)}</td>`;
+                tbody.appendChild(tr);
+            });
+
+            document.getElementById('concilDetalheModal').classList.remove('hidden');
+            lucide.createIcons();
+        }
+
+        function fecharConcilDetalhe() {
+            document.getElementById('concilDetalheModal').classList.add('hidden');
+        }
+
+        // ========================================
+        // EXPORTAR EXCEL — CONCILIAÇÃO PRINCIPAL
+        // ========================================
+
+        function exportarConciliacaoExcel() {
+            if (_concilRows.length === 0) { alert('Rode a conciliação primeiro.'); return; }
+            const fmtMoney = v => (v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+            const wb = XLSX.utils.book_new();
+            const data = [['Arquivo','Responsável','Motoristas','Data Emissão','Valor Nota','Valor Devido','Diferença','Dif %','Status']];
+            _concilRows.forEach(r => {
+                const cells = r.tr.querySelectorAll('td');
+                data.push([...cells].map(td => td.textContent.trim()));
+            });
+            const ws = XLSX.utils.aoa_to_sheet(data);
+            ws['!cols'] = data[0].map(() => ({ wch: 18 }));
+            XLSX.utils.book_append_sheet(wb, ws, 'Conciliação');
+            XLSX.writeFile(wb, `conciliacao_${new Date().toISOString().slice(0,10)}.xlsx`);
+        }
+
+        // ========================================
+        // EXPORTAR EXCEL — DETALHE MOTORISTA
+        // ========================================
+
+        function exportarDetalheMotoristaExcel() {
+            if (!_concilDetalheDriverId || !_concilDetalhePeriodoAtual) return;
+            const { dataInicio, dataFim } = _concilDetalhePeriodoAtual;
+            const ini = new Date(dataInicio.getFullYear(), dataInicio.getMonth(), dataInicio.getDate());
+            const fim = new Date(dataFim.getFullYear(),    dataFim.getMonth(),    dataFim.getDate());
+            const fmtDate = d => d instanceof Date ? d.toLocaleDateString('pt-BR') : new Date(d).toLocaleDateString('pt-BR');
+            const linhas = recebivelData.filter(r => r.driverId === _concilDetalheDriverId && r.data >= ini && r.data <= fim);
+
+            const wb = XLSX.utils.book_new();
+            const data = [['Data','Veículo','Rota','Valor Rotas','Ajuste','Adicional','Suporte','Total Motorista']];
+            linhas.forEach(r => data.push([
+                fmtDate(r.data), r.nome||'', r.rota||'',
+                r.valorRotas, r.ajuste, r.adicional, r.suporte, r.totalMotorista
+            ]));
+            const ws = XLSX.utils.aoa_to_sheet(data);
+            ws['!cols'] = [{ wch: 12 },{ wch: 20 },{ wch: 10 },{ wch: 14 },{ wch: 12 },{ wch: 14 },{ wch: 12 },{ wch: 16 }];
+            XLSX.utils.book_append_sheet(wb, ws, _concilDetalheNomeAtual?.slice(0,30) || 'Detalhe');
+            XLSX.writeFile(wb, `detalhe_${(_concilDetalheNomeAtual||'motorista').replace(/\s/g,'_')}_${new Date().toISOString().slice(0,10)}.xlsx`);
         }
 
         // Inicialização
