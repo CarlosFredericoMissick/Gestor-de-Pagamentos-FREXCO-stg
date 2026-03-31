@@ -606,7 +606,10 @@
         <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col">
             <div class="bg-gray-800 px-5 py-4 flex items-center justify-between rounded-t-2xl flex-shrink-0">
                 <div>
-                    <h3 class="text-base font-bold text-white" id="concilDetalheNome">Detalhes</h3>
+                    <h3 class="text-base font-bold text-white flex items-center gap-2">
+                        <span id="concilDetalheLiderBadge" class="hidden inline-block w-2.5 h-2.5 rounded-full bg-purple-400"></span>
+                        <span id="concilDetalheNome">Detalhes</span>
+                    </h3>
                     <p class="text-white/60 text-xs" id="concilDetalhePeriodo"></p>
                 </div>
                 <div class="flex items-center gap-2">
@@ -618,23 +621,56 @@
                     </button>
                 </div>
             </div>
+
+            <!-- Tabs (visíveis apenas para líderes) -->
+            <div id="concilDetalheTabs" class="hidden flex border-b border-gray-200 bg-white flex-shrink-0 px-5">
+                <button id="concilDetalheTabMotoristas" onclick="switchDetalheTab('motoristas')"
+                    class="px-4 py-2.5 text-sm font-semibold border-b-2 border-gray-700 text-gray-800 transition-colors">
+                    Motoristas na Nota
+                </button>
+                <button id="concilDetalheTabComissao" onclick="switchDetalheTab('comissao')"
+                    class="px-4 py-2.5 text-sm font-semibold border-b-2 border-transparent text-gray-500 hover:text-gray-700 transition-colors flex items-center gap-1.5">
+                    <span class="inline-block w-2 h-2 rounded-full bg-purple-500"></span>
+                    Comissão do Time
+                </button>
+            </div>
+
             <div class="flex-1 overflow-auto p-5">
-                <div id="concilDetalheResumo" class="grid grid-cols-3 gap-3 mb-4"></div>
-                <table class="w-full text-left border-collapse text-xs">
-                    <thead>
-                        <tr class="bg-gray-100 text-gray-600 font-bold uppercase whitespace-nowrap">
-                            <th class="px-3 py-2">Data</th>
-                            <th class="px-3 py-2">Veículo</th>
-                            <th class="px-3 py-2">Rota</th>
-                            <th class="px-3 py-2 text-right">Val. Rotas</th>
-                            <th class="px-3 py-2 text-right">Ajuste</th>
-                            <th class="px-3 py-2 text-right">Adicional</th>
-                            <th class="px-3 py-2 text-right">Suporte</th>
-                            <th class="px-3 py-2 text-right font-bold text-gray-800">Total</th>
-                        </tr>
-                    </thead>
-                    <tbody id="concilDetalheBody" class="divide-y divide-gray-100"></tbody>
-                </table>
+                <!-- Cards resumo -->
+                <div id="concilDetalheResumo" class="grid grid-cols-5 gap-2 mb-4"></div>
+
+                <!-- Painel: Motoristas na nota (padrão) -->
+                <div id="concilDetalhePainelMotoristas">
+                    <table class="w-full text-left border-collapse text-xs">
+                        <thead>
+                            <tr class="bg-gray-100 text-gray-600 font-bold uppercase whitespace-nowrap">
+                                <th class="px-3 py-2">Data</th>
+                                <th class="px-3 py-2">Veículo</th>
+                                <th class="px-3 py-2">Rota</th>
+                                <th class="px-3 py-2 text-right">Val. Rotas</th>
+                                <th class="px-3 py-2 text-right">Ajuste</th>
+                                <th class="px-3 py-2 text-right">Adicional</th>
+                                <th class="px-3 py-2 text-right">Suporte</th>
+                                <th class="px-3 py-2 text-right font-bold text-gray-800">Total</th>
+                            </tr>
+                        </thead>
+                        <tbody id="concilDetalheBody" class="divide-y divide-gray-100"></tbody>
+                    </table>
+                </div>
+
+                <!-- Painel: Comissão do time (líderes) -->
+                <div id="concilDetalhePainelComissao" class="hidden">
+                    <table class="w-full text-left border-collapse text-xs">
+                        <thead>
+                            <tr class="bg-purple-50 text-purple-700 font-bold uppercase whitespace-nowrap">
+                                <th class="px-3 py-2">Data</th>
+                                <th class="px-3 py-2">Motorista</th>
+                                <th class="px-3 py-2 text-right">Comissão</th>
+                            </tr>
+                        </thead>
+                        <tbody id="concilComissaoBody" class="divide-y divide-purple-100"></tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>
@@ -3368,13 +3404,21 @@
                     : '';
                 const dataEmissaoDisplay = nota.dataEmissao || '-';
 
-                // Célula Valor Devido: clicável para detalhe (apenas não-líderes com driverId)
+                // Célula Valor Devido: clicável para detalhe
                 const valorDevidoCell = temDados
-                    ? (driverIdParaDetalhe
-                        ? `<td class="px-3 py-2 text-right font-mono text-blue-700 underline cursor-pointer hover:text-blue-900"
-                              onclick="abrirConcilDetalhe(${driverIdParaDetalhe}, '${respNome.replace(/'/g,"\\'")}', new Date('${dataInicio.toISOString()}'), new Date('${dataFim.toISOString()}'))">
+                    ? (isLider
+                        ? `<td class="px-3 py-2 text-right font-mono text-purple-700 underline cursor-pointer hover:text-purple-900"
+                              onclick="abrirConcilDetalheLider(
+                                prestadoresList.find(p=>p.vehicleId==='${prestResp.vehicleId}'),
+                                ${JSON.stringify((motoristasEfetivos||[]).map(m=>({vehicleId:m.vehicleId,nome:m.nome})))},
+                                new Date('${dataInicio.toISOString()}'),
+                                new Date('${dataFim.toISOString()}'))">
                               ${fmtMoney(valorDevido)}</td>`
-                        : `<td class="px-3 py-2 text-right font-mono">${fmtMoney(valorDevido)}</td>`)
+                        : driverIdParaDetalhe
+                            ? `<td class="px-3 py-2 text-right font-mono text-blue-700 underline cursor-pointer hover:text-blue-900"
+                                  onclick="abrirConcilDetalhe(${driverIdParaDetalhe}, '${respNome.replace(/'/g,"\\'")}', new Date('${dataInicio.toISOString()}'), new Date('${dataFim.toISOString()}'))">
+                                  ${fmtMoney(valorDevido)}</td>`
+                            : `<td class="px-3 py-2 text-right font-mono">${fmtMoney(valorDevido)}</td>`)
                     : `<td class="px-3 py-2 text-right text-gray-400">-</td>`;
 
                 const tr = document.createElement('tr');
@@ -3890,8 +3934,9 @@
         function getComissaoPorPeriodo(timeVinculado, dataInicio, dataFim) {
             const ini = new Date(dataInicio.getFullYear(), dataInicio.getMonth(), dataInicio.getDate());
             const fim = new Date(dataFim.getFullYear(),    dataFim.getMonth(),    dataFim.getDate());
+            const timeNorm = (timeVinculado || '').toLowerCase().trim();
             return recebivelData
-                .filter(r => (r.time || '') === timeVinculado && r.data >= ini && r.data <= fim)
+                .filter(r => (r.time || '').toLowerCase().trim() === timeNorm && r.data >= ini && r.data <= fim)
                 .reduce((sum, r) => sum + (r.comissao || 0), 0);
         }
 
@@ -3918,43 +3963,84 @@
         let _concilDetalheNomeAtual = null;
         let _concilDetalhePeriodoAtual = null;
 
+        let _concilDetalheIsLider = false;
+        let _concilDetalheLiderInfo = null; // { timeVinculado, motoristasVinculados }
+
+        function switchDetalheTab(tab) {
+            const tabM  = document.getElementById('concilDetalheTabMotoristas');
+            const tabC  = document.getElementById('concilDetalheTabComissao');
+            const painM = document.getElementById('concilDetalhePainelMotoristas');
+            const painC = document.getElementById('concilDetalhePainelComissao');
+            if (tab === 'motoristas') {
+                tabM.classList.add('border-gray-700','text-gray-800');
+                tabM.classList.remove('border-transparent','text-gray-500');
+                tabC.classList.add('border-transparent','text-gray-500');
+                tabC.classList.remove('border-purple-500','text-purple-700');
+                painM.classList.remove('hidden');
+                painC.classList.add('hidden');
+            } else {
+                tabC.classList.add('border-purple-500','text-purple-700');
+                tabC.classList.remove('border-transparent','text-gray-500');
+                tabM.classList.add('border-transparent','text-gray-500');
+                tabM.classList.remove('border-gray-700','text-gray-800');
+                painC.classList.remove('hidden');
+                painM.classList.add('hidden');
+            }
+        }
+
         function abrirConcilDetalhe(driverId, nome, dataInicio, dataFim) {
-            _concilDetalheDriverId = driverId;
+            _concilDetalheDriverId  = driverId;
             _concilDetalheNomeAtual = nome;
             _concilDetalhePeriodoAtual = { dataInicio, dataFim };
+            _concilDetalheIsLider   = false;
 
             const ini = new Date(dataInicio.getFullYear(), dataInicio.getMonth(), dataInicio.getDate());
             const fim = new Date(dataFim.getFullYear(),    dataFim.getMonth(),    dataFim.getDate());
             const fmtMoney = v => (v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
-            const fmtDate = d => d instanceof Date
-                ? d.toLocaleDateString('pt-BR')
-                : new Date(d).toLocaleDateString('pt-BR');
+            const fmtDate  = d => (d instanceof Date ? d : new Date(d)).toLocaleDateString('pt-BR');
 
             const linhas = recebivelData.filter(r => r.driverId === driverId && r.data >= ini && r.data <= fim);
 
             document.getElementById('concilDetalheNome').textContent = nome;
+            document.getElementById('concilDetalheLiderBadge').classList.add('hidden');
             document.getElementById('concilDetalhePeriodo').textContent =
-                `${dataInicio.toLocaleDateString('pt-BR')} — ${dataFim.toLocaleDateString('pt-BR')} · ${linhas.length} registro(s)`;
+                `${ini.toLocaleDateString('pt-BR')} — ${fim.toLocaleDateString('pt-BR')} · ${linhas.length} registro(s)`;
 
-            // Cards resumo
-            const total = linhas.reduce((s,r) => s + r.totalMotorista, 0);
-            const totalRotas = linhas.reduce((s,r) => s + r.valorRotas, 0);
-            const totalAjuste = linhas.reduce((s,r) => s + r.ajuste, 0);
+            // Tabs — ocultas para motorista normal
+            document.getElementById('concilDetalheTabs').classList.add('hidden');
+            document.getElementById('concilDetalhePainelMotoristas').classList.remove('hidden');
+            document.getElementById('concilDetalhePainelComissao').classList.add('hidden');
+
+            // 5 cards
+            const total      = linhas.reduce((s,r) => s + r.totalMotorista, 0);
+            const totalRotas = linhas.reduce((s,r) => s + r.valorRotas,     0);
+            const totalAjuste= linhas.reduce((s,r) => s + r.ajuste,         0);
+            const totalAdic  = linhas.reduce((s,r) => s + r.adicional,      0);
+            const totalSup   = linhas.reduce((s,r) => s + r.suporte,        0);
+
             document.getElementById('concilDetalheResumo').innerHTML = `
                 <div class="bg-gray-50 rounded-xl p-3 border border-gray-200 text-center">
                     <div class="text-xs text-gray-500 mb-1">Total no período</div>
-                    <div class="text-xl font-bold text-gray-800">${fmtMoney(total)}</div>
+                    <div class="text-lg font-bold text-gray-800">${fmtMoney(total)}</div>
                 </div>
                 <div class="bg-blue-50 rounded-xl p-3 border border-blue-200 text-center">
                     <div class="text-xs text-blue-600 mb-1">Valor Rotas</div>
-                    <div class="text-xl font-bold text-blue-700">${fmtMoney(totalRotas)}</div>
+                    <div class="text-lg font-bold text-blue-700">${fmtMoney(totalRotas)}</div>
                 </div>
                 <div class="bg-orange-50 rounded-xl p-3 border border-orange-200 text-center">
-                    <div class="text-xs text-orange-600 mb-1">Ajuste total</div>
-                    <div class="text-xl font-bold text-orange-700">${fmtMoney(totalAjuste)}</div>
+                    <div class="text-xs text-orange-600 mb-1">Ajuste</div>
+                    <div class="text-lg font-bold text-orange-700">${fmtMoney(totalAjuste)}</div>
+                </div>
+                <div class="bg-teal-50 rounded-xl p-3 border border-teal-200 text-center">
+                    <div class="text-xs text-teal-600 mb-1">Adicional</div>
+                    <div class="text-lg font-bold text-teal-700">${fmtMoney(totalAdic)}</div>
+                </div>
+                <div class="bg-indigo-50 rounded-xl p-3 border border-indigo-200 text-center">
+                    <div class="text-xs text-indigo-600 mb-1">Suporte</div>
+                    <div class="text-lg font-bold text-indigo-700">${fmtMoney(totalSup)}</div>
                 </div>`;
 
-            // Tabela detalhada
+            // Tabela motoristas
             const tbody = document.getElementById('concilDetalheBody');
             tbody.innerHTML = '';
             linhas.forEach(r => {
@@ -3970,6 +4056,108 @@
                     <td class="px-3 py-2 text-right font-mono text-gray-500">${fmtMoney(r.suporte)}</td>
                     <td class="px-3 py-2 text-right font-bold font-mono text-gray-800">${fmtMoney(r.totalMotorista)}</td>`;
                 tbody.appendChild(tr);
+            });
+
+            document.getElementById('concilDetalheModal').classList.remove('hidden');
+            lucide.createIcons();
+        }
+
+        function abrirConcilDetalheLider(lider, motoristasNaNota, dataInicio, dataFim) {
+            _concilDetalheDriverId     = lider.vehicleId;
+            _concilDetalheNomeAtual    = lider.nome;
+            _concilDetalhePeriodoAtual = { dataInicio, dataFim };
+            _concilDetalheIsLider      = true;
+            _concilDetalheLiderInfo    = { lider, motoristasNaNota };
+
+            const ini = new Date(dataInicio.getFullYear(), dataInicio.getMonth(), dataInicio.getDate());
+            const fim = new Date(dataFim.getFullYear(),    dataFim.getMonth(),    dataFim.getDate());
+            const fmtMoney = v => (v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+            const fmtDate  = d => (d instanceof Date ? d : new Date(d)).toLocaleDateString('pt-BR');
+
+            document.getElementById('concilDetalheNome').textContent = lider.nome;
+            document.getElementById('concilDetalheLiderBadge').classList.remove('hidden');
+            document.getElementById('concilDetalhePeriodo').textContent =
+                `${ini.toLocaleDateString('pt-BR')} — ${fim.toLocaleDateString('pt-BR')} · Time: ${lider.timeVinculado}`;
+
+            // Mostrar tabs
+            document.getElementById('concilDetalheTabs').classList.remove('hidden');
+            switchDetalheTab('motoristas');
+
+            // Motoristas vinculados (permanentes + da nota)
+            const vinculados = new Set([
+                ...(lider.motoristasVinculados || []).map(m => String(m.vehicleId)),
+                ...(motoristasNaNota || []).map(m => String(m.vehicleId))
+            ]);
+            const linhasMotoristas = recebivelData.filter(r =>
+                vinculados.has(String(r.driverId)) && r.data >= ini && r.data <= fim
+            );
+
+            // Comissão do time
+            const timeNorm = (lider.timeVinculado || '').toLowerCase().trim();
+            const linhasComissao = recebivelData.filter(r =>
+                (r.time || '').toLowerCase().trim() === timeNorm && r.data >= ini && r.data <= fim
+            );
+
+            const totalMotoristas = linhasMotoristas.reduce((s,r) => s + r.totalMotorista, 0);
+            const totalComissao   = linhasComissao.reduce((s,r) => s + (r.comissao || 0), 0);
+
+            // 5 cards
+            const totalRotas = linhasMotoristas.reduce((s,r) => s + r.valorRotas, 0);
+            const totalAjuste= linhasMotoristas.reduce((s,r) => s + r.ajuste, 0);
+            const totalAdic  = linhasMotoristas.reduce((s,r) => s + r.adicional, 0);
+            const totalSup   = linhasMotoristas.reduce((s,r) => s + r.suporte, 0);
+
+            document.getElementById('concilDetalheResumo').innerHTML = `
+                <div class="bg-gray-50 rounded-xl p-3 border border-gray-200 text-center">
+                    <div class="text-xs text-gray-500 mb-1">Total</div>
+                    <div class="text-lg font-bold text-gray-800">${fmtMoney(totalMotoristas + totalComissao)}</div>
+                </div>
+                <div class="bg-purple-50 rounded-xl p-3 border border-purple-200 text-center">
+                    <div class="text-xs text-purple-600 mb-1">Comissão Time</div>
+                    <div class="text-lg font-bold text-purple-700">${fmtMoney(totalComissao)}</div>
+                </div>
+                <div class="bg-blue-50 rounded-xl p-3 border border-blue-200 text-center">
+                    <div class="text-xs text-blue-600 mb-1">Val. Rotas</div>
+                    <div class="text-lg font-bold text-blue-700">${fmtMoney(totalRotas)}</div>
+                </div>
+                <div class="bg-orange-50 rounded-xl p-3 border border-orange-200 text-center">
+                    <div class="text-xs text-orange-600 mb-1">Ajuste</div>
+                    <div class="text-lg font-bold text-orange-700">${fmtMoney(totalAjuste)}</div>
+                </div>
+                <div class="bg-teal-50 rounded-xl p-3 border border-teal-200 text-center">
+                    <div class="text-xs text-teal-600 mb-1">Adicional + Suporte</div>
+                    <div class="text-lg font-bold text-teal-700">${fmtMoney(totalAdic + totalSup)}</div>
+                </div>`;
+
+            // Aba 1: Motoristas na nota
+            const tbody = document.getElementById('concilDetalheBody');
+            tbody.innerHTML = '';
+            linhasMotoristas.forEach(r => {
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-gray-50';
+                tr.innerHTML = `
+                    <td class="px-3 py-2">${fmtDate(r.data)}</td>
+                    <td class="px-3 py-2 text-gray-600">${r.nome || '-'}</td>
+                    <td class="px-3 py-2 text-gray-500">${r.rota || '-'}</td>
+                    <td class="px-3 py-2 text-right font-mono">${fmtMoney(r.valorRotas)}</td>
+                    <td class="px-3 py-2 text-right font-mono ${r.ajuste < 0 ? 'text-red-600' : r.ajuste > 0 ? 'text-green-600' : 'text-gray-400'}">${fmtMoney(r.ajuste)}</td>
+                    <td class="px-3 py-2 text-right font-mono text-gray-500">${fmtMoney(r.adicional)}</td>
+                    <td class="px-3 py-2 text-right font-mono text-gray-500">${fmtMoney(r.suporte)}</td>
+                    <td class="px-3 py-2 text-right font-bold font-mono text-gray-800">${fmtMoney(r.totalMotorista)}</td>`;
+                tbody.appendChild(tr);
+            });
+
+            // Aba 2: Comissão do time
+            const tbodyC = document.getElementById('concilComissaoBody');
+            tbodyC.innerHTML = '';
+            linhasComissao.sort((a,b) => a.data - b.data).forEach(r => {
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-purple-50/50';
+                tr.innerHTML = `
+                    <td class="px-3 py-2 text-gray-700">${fmtDate(r.data)}</td>
+                    <td class="px-3 py-2 text-gray-700">${r.nome || '-'}</td>
+                    <td class="px-3 py-2 text-right font-bold font-mono text-purple-700">${fmtMoney(r.comissao || 0)}</td>`;
+                tbodyC.appendChild(tr);
             });
 
             document.getElementById('concilDetalheModal').classList.remove('hidden');
@@ -4008,18 +4196,53 @@
             const { dataInicio, dataFim } = _concilDetalhePeriodoAtual;
             const ini = new Date(dataInicio.getFullYear(), dataInicio.getMonth(), dataInicio.getDate());
             const fim = new Date(dataFim.getFullYear(),    dataFim.getMonth(),    dataFim.getDate());
-            const fmtDate = d => d instanceof Date ? d.toLocaleDateString('pt-BR') : new Date(d).toLocaleDateString('pt-BR');
-            const linhas = recebivelData.filter(r => r.driverId === _concilDetalheDriverId && r.data >= ini && r.data <= fim);
-
+            const fmtDate = d => (d instanceof Date ? d : new Date(d)).toLocaleDateString('pt-BR');
             const wb = XLSX.utils.book_new();
-            const data = [['Data','Veículo','Rota','Valor Rotas','Ajuste','Adicional','Suporte','Total Motorista']];
-            linhas.forEach(r => data.push([
-                fmtDate(r.data), r.nome||'', r.rota||'',
-                r.valorRotas, r.ajuste, r.adicional, r.suporte, r.totalMotorista
-            ]));
-            const ws = XLSX.utils.aoa_to_sheet(data);
-            ws['!cols'] = [{ wch: 12 },{ wch: 20 },{ wch: 10 },{ wch: 14 },{ wch: 12 },{ wch: 14 },{ wch: 12 },{ wch: 16 }];
-            XLSX.utils.book_append_sheet(wb, ws, _concilDetalheNomeAtual?.slice(0,30) || 'Detalhe');
+
+            if (_concilDetalheIsLider && _concilDetalheLiderInfo) {
+                const { lider, motoristasNaNota } = _concilDetalheLiderInfo;
+
+                // Aba 1: Motoristas na nota
+                const vinculados = new Set([
+                    ...(lider.motoristasVinculados || []).map(m => String(m.vehicleId)),
+                    ...(motoristasNaNota || []).map(m => String(m.vehicleId))
+                ]);
+                const linhasM = recebivelData.filter(r =>
+                    vinculados.has(String(r.driverId)) && r.data >= ini && r.data <= fim
+                );
+                const dataM = [['Data','Veículo','Rota','Valor Rotas','Ajuste','Adicional','Suporte','Total']];
+                linhasM.forEach(r => dataM.push([
+                    fmtDate(r.data), r.nome||'', r.rota||'',
+                    r.valorRotas, r.ajuste, r.adicional, r.suporte, r.totalMotorista
+                ]));
+                const wsM = XLSX.utils.aoa_to_sheet(dataM);
+                wsM['!cols'] = [{wch:12},{wch:20},{wch:10},{wch:14},{wch:12},{wch:14},{wch:12},{wch:14}];
+                XLSX.utils.book_append_sheet(wb, wsM, 'Motoristas na Nota');
+
+                // Aba 2: Comissão do time
+                const timeNorm = (lider.timeVinculado || '').toLowerCase().trim();
+                const linhasC = recebivelData
+                    .filter(r => (r.time||'').toLowerCase().trim() === timeNorm && r.data >= ini && r.data <= fim)
+                    .sort((a,b) => a.data - b.data);
+                const dataC = [['Data','Motorista','Comissão']];
+                linhasC.forEach(r => dataC.push([fmtDate(r.data), r.nome||'', r.comissao||0]));
+                const wsC = XLSX.utils.aoa_to_sheet(dataC);
+                wsC['!cols'] = [{wch:12},{wch:24},{wch:14}];
+                XLSX.utils.book_append_sheet(wb, wsC, `Comissão ${lider.timeVinculado}`.slice(0,31));
+
+            } else {
+                // Motorista normal — aba única
+                const linhas = recebivelData.filter(r => r.driverId === _concilDetalheDriverId && r.data >= ini && r.data <= fim);
+                const data = [['Data','Veículo','Rota','Valor Rotas','Ajuste','Adicional','Suporte','Total Motorista']];
+                linhas.forEach(r => data.push([
+                    fmtDate(r.data), r.nome||'', r.rota||'',
+                    r.valorRotas, r.ajuste, r.adicional, r.suporte, r.totalMotorista
+                ]));
+                const ws = XLSX.utils.aoa_to_sheet(data);
+                ws['!cols'] = [{wch:12},{wch:20},{wch:10},{wch:14},{wch:12},{wch:14},{wch:12},{wch:16}];
+                XLSX.utils.book_append_sheet(wb, ws, (_concilDetalheNomeAtual||'Detalhe').slice(0,31));
+            }
+
             XLSX.writeFile(wb, `detalhe_${(_concilDetalheNomeAtual||'motorista').replace(/\s/g,'_')}_${new Date().toISOString().slice(0,10)}.xlsx`);
         }
 
