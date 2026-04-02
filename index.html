@@ -1466,16 +1466,24 @@
                 let atualizados = 0, ignorados = 0;
 
                 for (const row of rows) {
-                    const driverId  = row[0] ? parseInt(row[0]) : null;
-                    const nomeRow   = (row[1] || '').toString().trim();
-                    const cnpj      = (row[2] || '').toString().trim();
-                    const chavePix  = (row[3] || '').toString().trim();
+                    // Lê a coluna A como string para preservar prefixos M e L (ex: "M42", "L5", "660")
+                    const rawId    = row[0] != null ? String(row[0]).trim() : '';
+                    const nomeRow  = (row[1] || '').toString().trim();
+                    const cnpj     = (row[2] || '').toString().trim();
+                    const chavePix = (row[3] || '').toString().trim();
 
                     if (!cnpj && !chavePix) { ignorados++; continue; }
+                    if (!rawId) { conflitos.push(`ID ausente — linha "${nomeRow}" ignorada`); continue; }
 
-                    // Match exclusivo por driver_id (col 0)
-                    let prestador = driverId ? findPrestadorByVehicleId(driverId) : null;
-                    if (!prestador) { conflitos.push(`Não encontrado: ID ${driverId} / "${nomeRow}"`); continue; }
+                    // Busca em prestadoresList por vehicleId (numérico ou com prefixo M)
+                    let prestador = prestadoresList.find(p => String(p.vehicleId) === rawId) || null;
+
+                    // Se não encontrado e ID começa com "L", busca também em líderesList
+                    if (!prestador && rawId.startsWith('L')) {
+                        prestador = (líderesList || []).find(p => String(p.vehicleId) === rawId) || null;
+                    }
+
+                    if (!prestador) { conflitos.push(`Não encontrado: ID "${rawId}" / "${nomeRow}"`); continue; }
 
                     // Verificar duplicata de CNPJ global
                     if (cnpj) {
