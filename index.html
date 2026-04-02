@@ -651,7 +651,7 @@
 
             <div class="flex-1 overflow-auto p-5">
                 <!-- Cards resumo -->
-                <div id="concilDetalheResumo" class="grid grid-cols-5 gap-2 mb-4"></div>
+                <div id="concilDetalheResumo" class="grid grid-cols-6 gap-2 mb-4"></div>
 
                 <!-- Painel: Motoristas na nota (padrão) -->
                 <div id="concilDetalhePainelMotoristas">
@@ -664,6 +664,7 @@
                                 <th class="px-3 py-2 text-right">Val. Rotas</th>
                                 <th class="px-3 py-2 text-right">Ajuste</th>
                                 <th class="px-3 py-2 text-right">Adicional</th>
+                                <th class="px-3 py-2 text-right">Descarga</th>
                                 <th class="px-3 py-2 text-right">Suporte</th>
                                 <th class="px-3 py-2 text-right font-bold text-gray-800">Total</th>
                             </tr>
@@ -859,6 +860,9 @@
                 await loadPrestadoresLocal();
                 reprocessExtractedResults();
             } else {
+                // Remove banner de sessão expirada imediatamente ao tentar reconectar
+                document.getElementById('spDisconnectedBanner')?.remove();
+
                 const btn  = document.getElementById('btnSharePoint');
                 const icon = document.getElementById('iconSharePoint');
                 const span = btn?.querySelector('span');
@@ -1767,7 +1771,7 @@
         // ========================================
         // IMPORTAR PLANILHA DE RECEBÍVEL
         // Nova estrutura: Data(0)|ID vehicle(1)|Time(2)|Veículo(3)|Rota(4)|ID Motorista driver_id(5)|
-        //                 Valor Rotas(6)|Ajuste(7)|Adicional(8)|Suporte(9)|Total Motorista(10)|Comissão(11)|Total(12)
+        //                 Valor Rotas(6)|Ajuste(7)|Adicional(8)|Descarga(9)|Suporte(10)|Total Motorista(11)|Comissão(12)|Total(13)
         // ========================================
 
         async function importarRecebivelExcel(file) {
@@ -1797,10 +1801,11 @@
                         driverId:       parseInt(r[5]),
                         valorRotas:     parseFloat(r[6]) || 0,
                         ajuste:         parseFloat(r[7]) || 0,
-                        adicional:      parseFloat(r[8]) || 0,
-                        suporte:        parseFloat(r[9]) || 0,
-                        totalMotorista: parseFloat(r[10]) || 0,
-                        comissao:       parseFloat(r[11]) || 0,
+                        adicional:      parseFloat(r[8])  || 0,
+                        descarga:       parseFloat(r[9])  || 0,
+                        suporte:        parseFloat(r[10]) || 0,
+                        totalMotorista: parseFloat(r[11]) || 0,
+                        comissao:       parseFloat(r[12]) || 0,
                     };
                 }).filter(r => !isNaN(r.driverId));
 
@@ -1832,13 +1837,14 @@
                 const data = await resp.json();
                 recebivelData = (data.recebivel || []).map(r => ({
                     ...r,
-                    data: new Date(r.data),
-                    valorRotas:  r.valorRotas  || 0,
-                    ajuste:      r.ajuste      || 0,
-                    adicional:   r.adicional   || 0,
-                    suporte:     r.suporte     || 0,
-                    comissao:    r.comissao    || 0,
-                    rota:        r.rota        || '',
+                    data:      new Date(r.data),
+                    valorRotas: r.valorRotas || 0,
+                    ajuste:     r.ajuste     || 0,
+                    adicional:  r.adicional  || 0,
+                    descarga:   r.descarga   || 0,
+                    suporte:    r.suporte    || 0,
+                    comissao:   r.comissao   || 0,
+                    rota:       r.rota       || '',
                 }));
                 console.log(`✅ Recebível SP: ${recebivelData.length} registros`);
                 document.getElementById('recebivelStatus').textContent =
@@ -4250,36 +4256,41 @@
 
             // Tabs — ocultas para motorista normal
             document.getElementById('concilDetalheTabs').classList.add('hidden');
+            document.getElementById('concilDetalheResumo').className = 'grid grid-cols-6 gap-2 mb-4';
             document.getElementById('concilDetalhePainelMotoristas').classList.remove('hidden');
             document.getElementById('concilDetalhePainelComissao').classList.add('hidden');
 
-            // 5 cards
-            const total      = linhas.reduce((s,r) => s + r.totalMotorista, 0);
-            const totalRotas = linhas.reduce((s,r) => s + r.valorRotas,     0);
-            const totalAjuste= linhas.reduce((s,r) => s + r.ajuste,         0);
-            const totalAdic  = linhas.reduce((s,r) => s + r.adicional,      0);
-            const totalSup   = linhas.reduce((s,r) => s + r.suporte,        0);
+            const total       = linhas.reduce((s,r) => s + r.totalMotorista, 0);
+            const totalRotas  = linhas.reduce((s,r) => s + r.valorRotas,     0);
+            const totalAjuste = linhas.reduce((s,r) => s + r.ajuste,         0);
+            const totalAdic   = linhas.reduce((s,r) => s + r.adicional,      0);
+            const totalDesc   = linhas.reduce((s,r) => s + (r.descarga||0),  0);
+            const totalSup    = linhas.reduce((s,r) => s + r.suporte,        0);
 
             document.getElementById('concilDetalheResumo').innerHTML = `
-                <div class="bg-gray-50 rounded-xl p-3 border border-gray-200 text-center">
-                    <div class="text-xs text-gray-500 mb-1">Total no período</div>
-                    <div class="text-lg font-bold text-gray-800">${fmtMoney(total)}</div>
+                <div class="bg-gray-50 rounded-xl p-2.5 border border-gray-200 text-center">
+                    <div class="text-[10px] text-gray-500 mb-1">Total</div>
+                    <div class="text-base font-bold text-gray-800">${fmtMoney(total)}</div>
                 </div>
-                <div class="bg-blue-50 rounded-xl p-3 border border-blue-200 text-center">
-                    <div class="text-xs text-blue-600 mb-1">Valor Rotas</div>
-                    <div class="text-lg font-bold text-blue-700">${fmtMoney(totalRotas)}</div>
+                <div class="bg-blue-50 rounded-xl p-2.5 border border-blue-200 text-center">
+                    <div class="text-[10px] text-blue-600 mb-1">Val. Rotas</div>
+                    <div class="text-base font-bold text-blue-700">${fmtMoney(totalRotas)}</div>
                 </div>
-                <div class="bg-orange-50 rounded-xl p-3 border border-orange-200 text-center">
-                    <div class="text-xs text-orange-600 mb-1">Ajuste</div>
-                    <div class="text-lg font-bold text-orange-700">${fmtMoney(totalAjuste)}</div>
+                <div class="bg-orange-50 rounded-xl p-2.5 border border-orange-200 text-center">
+                    <div class="text-[10px] text-orange-600 mb-1">Ajuste</div>
+                    <div class="text-base font-bold text-orange-700">${fmtMoney(totalAjuste)}</div>
                 </div>
-                <div class="bg-teal-50 rounded-xl p-3 border border-teal-200 text-center">
-                    <div class="text-xs text-teal-600 mb-1">Adicional</div>
-                    <div class="text-lg font-bold text-teal-700">${fmtMoney(totalAdic)}</div>
+                <div class="bg-teal-50 rounded-xl p-2.5 border border-teal-200 text-center">
+                    <div class="text-[10px] text-teal-600 mb-1">Adicional</div>
+                    <div class="text-base font-bold text-teal-700">${fmtMoney(totalAdic)}</div>
                 </div>
-                <div class="bg-indigo-50 rounded-xl p-3 border border-indigo-200 text-center">
-                    <div class="text-xs text-indigo-600 mb-1">Suporte</div>
-                    <div class="text-lg font-bold text-indigo-700">${fmtMoney(totalSup)}</div>
+                <div class="bg-yellow-50 rounded-xl p-2.5 border border-yellow-200 text-center">
+                    <div class="text-[10px] text-yellow-600 mb-1">Descarga</div>
+                    <div class="text-base font-bold text-yellow-700">${fmtMoney(totalDesc)}</div>
+                </div>
+                <div class="bg-indigo-50 rounded-xl p-2.5 border border-indigo-200 text-center">
+                    <div class="text-[10px] text-indigo-600 mb-1">Suporte</div>
+                    <div class="text-base font-bold text-indigo-700">${fmtMoney(totalSup)}</div>
                 </div>`;
 
             // Tabela motoristas
@@ -4295,6 +4306,7 @@
                     <td class="px-3 py-2 text-right font-mono">${fmtMoney(r.valorRotas)}</td>
                     <td class="px-3 py-2 text-right font-mono ${r.ajuste < 0 ? 'text-red-600' : r.ajuste > 0 ? 'text-green-600' : 'text-gray-400'}">${fmtMoney(r.ajuste)}</td>
                     <td class="px-3 py-2 text-right font-mono text-gray-500">${fmtMoney(r.adicional)}</td>
+                    <td class="px-3 py-2 text-right font-mono text-yellow-700">${fmtMoney(r.descarga||0)}</td>
                     <td class="px-3 py-2 text-right font-mono text-gray-500">${fmtMoney(r.suporte)}</td>
                     <td class="px-3 py-2 text-right font-bold font-mono text-gray-800">${fmtMoney(r.totalMotorista)}</td>`;
                 tbody.appendChild(tr);
@@ -4332,6 +4344,7 @@
 
             // Mostrar tabs
             document.getElementById('concilDetalheTabs').classList.remove('hidden');
+            document.getElementById('concilDetalheResumo').className = 'grid grid-cols-7 gap-2 mb-4';
             switchDetalheTab('motoristas');
 
             // Motoristas vinculados (permanentes + da nota)
@@ -4352,32 +4365,41 @@
             const totalMotoristas = linhasMotoristas.reduce((s,r) => s + r.totalMotorista, 0);
             const totalComissao   = linhasComissao.reduce((s,r) => s + (r.comissao || 0), 0);
 
-            // 5 cards
-            const totalRotas = linhasMotoristas.reduce((s,r) => s + r.valorRotas, 0);
-            const totalAjuste= linhasMotoristas.reduce((s,r) => s + r.ajuste, 0);
-            const totalAdic  = linhasMotoristas.reduce((s,r) => s + r.adicional, 0);
-            const totalSup   = linhasMotoristas.reduce((s,r) => s + r.suporte, 0);
+            // 7 cards
+            const totalRotas  = linhasMotoristas.reduce((s,r) => s + r.valorRotas,    0);
+            const totalAjuste = linhasMotoristas.reduce((s,r) => s + r.ajuste,        0);
+            const totalAdic   = linhasMotoristas.reduce((s,r) => s + r.adicional,     0);
+            const totalDesc   = linhasMotoristas.reduce((s,r) => s + (r.descarga||0), 0);
+            const totalSup    = linhasMotoristas.reduce((s,r) => s + r.suporte,       0);
 
             document.getElementById('concilDetalheResumo').innerHTML = `
-                <div class="bg-gray-50 rounded-xl p-3 border border-gray-200 text-center">
-                    <div class="text-xs text-gray-500 mb-1">Total</div>
-                    <div class="text-lg font-bold text-gray-800">${fmtMoney(totalMotoristas + totalComissao)}</div>
+                <div class="bg-gray-50 rounded-xl p-2.5 border border-gray-200 text-center">
+                    <div class="text-[10px] text-gray-500 mb-1">Total</div>
+                    <div class="text-base font-bold text-gray-800">${fmtMoney(totalMotoristas + totalComissao)}</div>
                 </div>
-                <div class="bg-purple-50 rounded-xl p-3 border border-purple-200 text-center">
-                    <div class="text-xs text-purple-600 mb-1">Comissão Time</div>
-                    <div class="text-lg font-bold text-purple-700">${fmtMoney(totalComissao)}</div>
+                <div class="bg-purple-50 rounded-xl p-2.5 border border-purple-200 text-center">
+                    <div class="text-[10px] text-purple-600 mb-1">Comissão Time</div>
+                    <div class="text-base font-bold text-purple-700">${fmtMoney(totalComissao)}</div>
                 </div>
-                <div class="bg-blue-50 rounded-xl p-3 border border-blue-200 text-center">
-                    <div class="text-xs text-blue-600 mb-1">Val. Rotas</div>
-                    <div class="text-lg font-bold text-blue-700">${fmtMoney(totalRotas)}</div>
+                <div class="bg-blue-50 rounded-xl p-2.5 border border-blue-200 text-center">
+                    <div class="text-[10px] text-blue-600 mb-1">Val. Rotas</div>
+                    <div class="text-base font-bold text-blue-700">${fmtMoney(totalRotas)}</div>
                 </div>
-                <div class="bg-orange-50 rounded-xl p-3 border border-orange-200 text-center">
-                    <div class="text-xs text-orange-600 mb-1">Ajuste</div>
-                    <div class="text-lg font-bold text-orange-700">${fmtMoney(totalAjuste)}</div>
+                <div class="bg-orange-50 rounded-xl p-2.5 border border-orange-200 text-center">
+                    <div class="text-[10px] text-orange-600 mb-1">Ajuste</div>
+                    <div class="text-base font-bold text-orange-700">${fmtMoney(totalAjuste)}</div>
                 </div>
-                <div class="bg-teal-50 rounded-xl p-3 border border-teal-200 text-center">
-                    <div class="text-xs text-teal-600 mb-1">Adicional + Suporte</div>
-                    <div class="text-lg font-bold text-teal-700">${fmtMoney(totalAdic + totalSup)}</div>
+                <div class="bg-teal-50 rounded-xl p-2.5 border border-teal-200 text-center">
+                    <div class="text-[10px] text-teal-600 mb-1">Adicional</div>
+                    <div class="text-base font-bold text-teal-700">${fmtMoney(totalAdic)}</div>
+                </div>
+                <div class="bg-yellow-50 rounded-xl p-2.5 border border-yellow-200 text-center">
+                    <div class="text-[10px] text-yellow-600 mb-1">Descarga</div>
+                    <div class="text-base font-bold text-yellow-700">${fmtMoney(totalDesc)}</div>
+                </div>
+                <div class="bg-indigo-50 rounded-xl p-2.5 border border-indigo-200 text-center">
+                    <div class="text-[10px] text-indigo-600 mb-1">Suporte</div>
+                    <div class="text-base font-bold text-indigo-700">${fmtMoney(totalSup)}</div>
                 </div>`;
 
             // Aba 1: Motoristas na nota
@@ -4393,6 +4415,7 @@
                     <td class="px-3 py-2 text-right font-mono">${fmtMoney(r.valorRotas)}</td>
                     <td class="px-3 py-2 text-right font-mono ${r.ajuste < 0 ? 'text-red-600' : r.ajuste > 0 ? 'text-green-600' : 'text-gray-400'}">${fmtMoney(r.ajuste)}</td>
                     <td class="px-3 py-2 text-right font-mono text-gray-500">${fmtMoney(r.adicional)}</td>
+                    <td class="px-3 py-2 text-right font-mono text-yellow-700">${fmtMoney(r.descarga||0)}</td>
                     <td class="px-3 py-2 text-right font-mono text-gray-500">${fmtMoney(r.suporte)}</td>
                     <td class="px-3 py-2 text-right font-bold font-mono text-gray-800">${fmtMoney(r.totalMotorista)}</td>`;
                 tbody.appendChild(tr);
@@ -4461,10 +4484,10 @@
                 const linhasM = recebivelData.filter(r =>
                     vinculados.has(String(r.driverId)) && r.data >= ini && r.data <= fim
                 );
-                const dataM = [['Data','Veículo','Rota','Valor Rotas','Ajuste','Adicional','Suporte','Total']];
+                const dataM = [['Data','Veículo','Rota','Valor Rotas','Ajuste','Adicional','Descarga','Suporte','Total']];
                 linhasM.forEach(r => dataM.push([
                     fmtDate(r.data), r.nome||'', r.rota||'',
-                    r.valorRotas, r.ajuste, r.adicional, r.suporte, r.totalMotorista
+                    r.valorRotas, r.ajuste, r.adicional, r.descarga||0, r.suporte, r.totalMotorista
                 ]));
                 const wsM = XLSX.utils.aoa_to_sheet(dataM);
                 wsM['!cols'] = [{wch:12},{wch:20},{wch:10},{wch:14},{wch:12},{wch:14},{wch:12},{wch:14}];
@@ -4484,10 +4507,10 @@
             } else {
                 // Motorista normal — aba única
                 const linhas = recebivelData.filter(r => r.driverId === _concilDetalheDriverId && r.data >= ini && r.data <= fim);
-                const data = [['Data','Veículo','Rota','Valor Rotas','Ajuste','Adicional','Suporte','Total Motorista']];
+                const data = [['Data','Veículo','Rota','Valor Rotas','Ajuste','Adicional','Descarga','Suporte','Total Motorista']];
                 linhas.forEach(r => data.push([
                     fmtDate(r.data), r.nome||'', r.rota||'',
-                    r.valorRotas, r.ajuste, r.adicional, r.suporte, r.totalMotorista
+                    r.valorRotas, r.ajuste, r.adicional, r.descarga||0, r.suporte, r.totalMotorista
                 ]));
                 const ws = XLSX.utils.aoa_to_sheet(data);
                 ws['!cols'] = [{wch:12},{wch:20},{wch:10},{wch:14},{wch:12},{wch:14},{wch:12},{wch:16}];
