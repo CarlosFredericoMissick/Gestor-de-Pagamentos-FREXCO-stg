@@ -1465,8 +1465,11 @@
                 const conflitos = [];
                 let atualizados = 0, ignorados = 0;
 
+                // ── Fase 1: Simular todas as mudanças em cópias virtuais ──
+                // Cada entrada do mapa: sid (String vehicleId) → { prestador, cnpjs simulados }
+                const simulacao = new Map();
+
                 for (const row of rows) {
-                    // Lê a coluna A como string para preservar prefixos M e L (ex: "M42", "L5", "660")
                     const rawId    = row[0] != null ? String(row[0]).trim() : '';
                     const nomeRow  = (row[1] || '').toString().trim();
                     const cnpj     = (row[2] || '').toString().trim();
@@ -1475,49 +1478,76 @@
                     if (!cnpj && !chavePix) { ignorados++; continue; }
                     if (!rawId) { conflitos.push(`ID ausente — linha "${nomeRow}" ignorada`); continue; }
 
-                    // Busca em prestadoresList por vehicleId (numérico ou com prefixo M)
                     let prestador = prestadoresList.find(p => String(p.vehicleId) === rawId) || null;
-
-                    // Se não encontrado e ID começa com "L", busca também em líderesList
                     if (!prestador && rawId.startsWith('L')) {
                         prestador = (líderesList || []).find(p => String(p.vehicleId) === rawId) || null;
                     }
-
                     if (!prestador) { conflitos.push(`Não encontrado: ID "${rawId}" / "${nomeRow}"`); continue; }
 
-                    // Verificar duplicata de CNPJ global
-                    if (cnpj) {
-                        const norm = normalizeCnpj(cnpj);
-                        // Verifica duplicata apenas entre motoristas em uso
-                        const dono = prestadoresList.find(p =>
-                            p !== prestador &&
-                            p.inUse !== false &&
-                            Array.isArray(p.cnpjs) && p.cnpjs.some(c => normalizeCnpj(c.cnpj) === norm)
-                        );
-                        if (dono) {
-                            conflitos.push(`CNPJ ${cnpj} já pertence a "${dono.nome}" — linha "${nomeRow}" ignorada`);
-                            continue;
-                        }
+                    // Inicializa simulação para este prestador (cópia profunda dos CNPJs atuais)
+                    const sid = String(prestador.vehicleId);
+                    if (!simulacao.has(sid)) {
+                        simulacao.set(sid, {
+                            prestador,
+                            cnpjs: (prestador.cnpjs || []).map(c => ({ ...c }))
+                        });
                     }
+                    const sim = simulacao.get(sid);
 
-                    // Adicionar/atualizar entrada no array cnpjs
-                    if (!Array.isArray(prestador.cnpjs)) prestador.cnpjs = [];
-
+                    // Aplica a mudança na cópia virtual
                     if (cnpj) {
                         const norm = normalizeCnpj(cnpj);
-                        const existing = prestador.cnpjs.find(c => normalizeCnpj(c.cnpj) === norm);
+                        const existing = sim.cnpjs.find(c => normalizeCnpj(c.cnpj) === norm);
                         if (existing) {
-                            // Atualiza PIX do CNPJ existente
                             if (chavePix) existing.chavePix = chavePix;
                         } else {
-                            prestador.cnpjs.push({ cnpj, chavePix });
+                            sim.cnpjs.push({ cnpj, chavePix });
                         }
-                    } else if (chavePix && prestador.cnpjs.length > 0) {
-                        // Só PIX sem CNPJ: atualiza o primeiro registro
-                        prestador.cnpjs[0].chavePix = chavePix;
+                    } else if (chavePix && sim.cnpjs.length > 0) {
+                        sim.cnpjs[0].chavePix = chavePix;
                     }
-                    prestador.dataAtualizacao = new Date().toISOString();
-                    if (!useSharePoint) await savePrestadorLocal(prestador);
+                }
+
+                // ── Fase 2: Validar duplicatas no estado final simulado ──
+                // Mapa de CNPJ normalizado → sid do prestador dono no resultado final
+                const cnpjFinalMap = new Map();
+                const sidsComConflito = new Set();
+
+                // 2a) Popula com CNPJs de prestadores NÃO modificados por esta importação
+                for (const p of [...prestadoresList, ...(líderesList || [])]) {
+                    const sid = String(p.vehicleId);
+                    if (!simulacao.has(sid) && p.inUse !== false) {
+                        for (const c of (p.cnpjs || [])) {
+                            const norm = normalizeCnpj(c.cnpj);
+                            if (norm) cnpjFinalMap.set(norm, sid);
+                        }
+                    }
+                }
+
+                // 2b) Adiciona CNPJs do estado simulado e detecta conflitos
+                for (const [sid, sim] of simulacao) {
+                    if (sim.prestador.inUse === false) continue;
+                    for (const c of sim.cnpjs) {
+                        const norm = normalizeCnpj(c.cnpj);
+                        if (!norm) continue;
+                        if (cnpjFinalMap.has(norm) && cnpjFinalMap.get(norm) !== sid) {
+                            // CNPJ duplicado no estado final — marca ambos os prestadores
+                            const outroSid = cnpjFinalMap.get(norm);
+                            sidsComConflito.add(sid);
+                            sidsComConflito.add(outroSid);
+                            conflitos.push(`CNPJ ${c.cnpj} duplicado no resultado final — alterações para "${sim.prestador.nome}" ignoradas`);
+                        } else {
+                            cnpjFinalMap.set(norm, sid);
+                        }
+                    }
+                }
+
+                // ── Fase 3: Efetivar apenas prestadores sem conflito ──
+                for (const [sid, sim] of simulacao) {
+                    if (sidsComConflito.has(sid)) continue;
+                    sim.prestador.cnpjs = sim.cnpjs;
+                    sim.prestador.dataAtualizacao = new Date().toISOString();
+                    if (!useSharePoint) await savePrestadorLocal(sim.prestador);
                     atualizados++;
                 }
 
@@ -1649,6 +1679,13 @@
                             driverId, nome, cd: cdRaw || 'CD Desconhecido', inUse, time,
                             vehicles: []
                         };
+                    } else {
+                        // Mesmo motorista em múltiplas linhas (1 por veículo):
+                        // inUse usa lógica OR — se qualquer linha for ativa, o motorista é ativo
+                        if (inUse) byDriver[driverId].inUse = true;
+                        // Atualiza time e cd se vieram vazios na primeira linha
+                        if (time && !byDriver[driverId].time) byDriver[driverId].time = time;
+                        if (cdRaw && byDriver[driverId].cd === 'CD Desconhecido') byDriver[driverId].cd = cdRaw;
                     }
                     if (vehicleId) byDriver[driverId].vehicles.push({ vehicleId, nome: veiculo || nome });
                 }
