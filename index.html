@@ -1744,8 +1744,9 @@
             // Apagar todos os registros de motoristas (ativos e inativos)
             if (useSharePoint) {
                 prestadoresList = [];
-                await savePrestadoresSP_internal();
-                await loadPrestadoresFromSharePoint();
+                // skipMerge=true: impede que o merge reinsira os registros excluídos
+                await savePrestadoresSP_internal(true);
+                updatePrestadoresUI();
             } else {
                 for (const p of [...prestadoresList]) {
                     if (p.id) await deletePrestadorLocal(p.id);
@@ -2114,34 +2115,38 @@
 
         async function savePrestadoresSP() { await savePrestadoresSP_internal(); }
 
-        async function savePrestadoresSP_internal() {
+        async function savePrestadoresSP_internal(skipMerge = false) {
             if (!spAccessToken) return;
 
             // Merge: busca versão atual do SP, preserva campos que possam ter sido
             // editados por outro usuário desde o último load (last-write-wins por campo)
-            try {
-                const resp = await fetch(
-                    `https://graph.microsoft.com/v1.0/sites/${SP_SITE_ID}/drive/special/approot:/prestadores.json:/content`,
-                    { headers: { 'Authorization': `Bearer ${spAccessToken}` } }
-                );
-                if (resp.ok) {
-                    const spData = await resp.json();
-                    const spList = migratePrestadoresData(spData.prestadores || []);
-                    // Para cada prestador no SP que não está na nossa lista local,
-                    // verificamos se foi adicionado por outro usuário e preservamos
-                    spList.forEach(spP => {
-                        const local = prestadoresList.find(p => String(p.vehicleId) === String(spP.vehicleId));
-                        if (!local) {
-                            // Adicionado por outro usuário — incluir
-                            prestadoresList.push(spP);
-                        }
-                        // Se existe local, nossa versão prevalece (já tem as edições do usuário atual)
-                    });
-                    sortPrestadores();
+            // ATENÇÃO: skipMerge=true deve ser usado ao deletar para evitar que os
+            // registros excluídos sejam reinseridos a partir da versão remota.
+            if (!skipMerge) {
+                try {
+                    const resp = await fetch(
+                        `https://graph.microsoft.com/v1.0/sites/${SP_SITE_ID}/drive/special/approot:/prestadores.json:/content`,
+                        { headers: { 'Authorization': `Bearer ${spAccessToken}` } }
+                    );
+                    if (resp.ok) {
+                        const spData = await resp.json();
+                        const spList = migratePrestadoresData(spData.prestadores || []);
+                        // Para cada prestador no SP que não está na nossa lista local,
+                        // verificamos se foi adicionado por outro usuário e preservamos
+                        spList.forEach(spP => {
+                            const local = prestadoresList.find(p => String(p.vehicleId) === String(spP.vehicleId));
+                            if (!local) {
+                                // Adicionado por outro usuário — incluir
+                                prestadoresList.push(spP);
+                            }
+                            // Se existe local, nossa versão prevalece (já tem as edições do usuário atual)
+                        });
+                        sortPrestadores();
+                    }
+                } catch(e) {
+                    // Se falhar o merge, salva com a versão local mesmo
+                    console.warn('Merge SP falhou, salvando versão local:', e);
                 }
-            } catch(e) {
-                // Se falhar o merge, salva com a versão local mesmo
-                console.warn('Merge SP falhou, salvando versão local:', e);
             }
 
             const toSave = prestadoresList.map(p => ({...p, contrato: p.contrato ? {...p.contrato, fileData: null} : null}));
@@ -2314,8 +2319,13 @@
                 if (!useSharePoint) await deletePrestadorLocal(p.id);
                 prestadoresList.splice(i, 1);
             }
-            if (useSharePoint) { await savePrestadoresSP_internal(); await loadPrestadoresFromSharePoint(); }
-            else { await loadPrestadoresLocal(); }
+            if (useSharePoint) {
+                // skipMerge=true: impede que o merge reinsira os prestadores que acabaram de ser excluídos
+                await savePrestadoresSP_internal(true);
+                updatePrestadoresUI();
+            } else {
+                await loadPrestadoresLocal();
+            }
             reprocessExtractedResults();
         }
 
