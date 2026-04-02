@@ -323,13 +323,15 @@
                     <i data-lucide="users" class="w-4 h-4 text-blue-600"></i> Importar Base
                 </button>
                 <input type="file" id="baseMotoristaInput" accept=".xlsx" class="hidden">
-                <button onclick="document.getElementById('cnpjPixInput').click()" class="flex items-center gap-2 bg-white hover:bg-gray-50 border border-gray-300 text-gray-700 px-3 py-2 rounded-lg font-semibold text-sm transition-all" title="Importar planilha com CNPJs e chaves PIX (colunas: ID | Nome | CNPJ | Chave PIX)">
+                <button onclick="document.getElementById('cnpjPixInput').click()" class="flex items-center gap-2 bg-white hover:bg-gray-50 border border-gray-300 text-gray-700 px-3 py-2 rounded-lg font-semibold text-sm transition-all" title="Importar planilha com CNPJs e chaves PIX">
                     <i data-lucide="key" class="w-4 h-4 text-purple-600"></i> Importar CNPJs/PIX
                 </button>
+                <button onclick="abrirAjudaCnpjPix()" class="flex items-center justify-center w-7 h-7 bg-white hover:bg-purple-50 border border-gray-300 hover:border-purple-300 text-gray-400 hover:text-purple-600 rounded-lg text-xs font-bold transition-all -ml-1" title="Ver formato esperado">?</button>
                 <input type="file" id="cnpjPixInput" accept=".xlsx" class="hidden">
-                <button onclick="document.getElementById('contratosZipInput').click()" class="flex items-center gap-2 bg-white hover:bg-gray-50 border border-gray-300 text-gray-700 px-3 py-2 rounded-lg font-semibold text-sm transition-all" title="Importar ZIP com contratos nomeados como contrato_{id}_{nome}.pdf">
+                <button onclick="document.getElementById('contratosZipInput').click()" class="flex items-center gap-2 bg-white hover:bg-gray-50 border border-gray-300 text-gray-700 px-3 py-2 rounded-lg font-semibold text-sm transition-all" title="Importar ZIP com contratos">
                     <i data-lucide="archive" class="w-4 h-4 text-orange-600"></i> Importar Contratos ZIP
                 </button>
+                <button onclick="abrirAjudaContratos()" class="flex items-center justify-center w-7 h-7 bg-white hover:bg-orange-50 border border-gray-300 hover:border-orange-300 text-gray-400 hover:text-orange-600 rounded-lg text-xs font-bold transition-all -ml-1" title="Ver formato esperado">?</button>
                 <input type="file" id="contratosZipInput" accept=".zip" class="hidden">
                 <button onclick="exportPrestadoresExcel()" class="flex items-center gap-2 bg-white hover:bg-gray-50 border border-gray-300 text-gray-700 px-3 py-2 rounded-lg font-semibold text-sm transition-all">
                     <i data-lucide="file-spreadsheet" class="w-4 h-4"></i> Exportar
@@ -686,6 +688,112 @@
                         <tbody id="concilComissaoBody" class="divide-y divide-purple-100"></tbody>
                     </table>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Ajuda CNPJs/PIX -->
+    <div id="ajudaCnpjPixModal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+            <div class="bg-purple-600 px-5 py-4 flex items-center justify-between rounded-t-2xl">
+                <div>
+                    <h3 class="text-base font-bold text-white flex items-center gap-2">
+                        <i data-lucide="key" class="w-4 h-4"></i> Formato — Planilha de CNPJs/PIX
+                    </h3>
+                    <p class="text-white/70 text-xs mt-0.5">4 colunas, sem cabeçalho obrigatório</p>
+                </div>
+                <button onclick="document.getElementById('ajudaCnpjPixModal').classList.add('hidden')" class="text-white/80 hover:text-white">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="p-5">
+                <div class="overflow-hidden rounded-xl border border-gray-200 mb-4">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="bg-purple-50 text-purple-800 font-semibold text-xs uppercase">
+                                <th class="px-3 py-2 text-left">A — ID Motorista</th>
+                                <th class="px-3 py-2 text-left">B — Nome</th>
+                                <th class="px-3 py-2 text-left">C — CNPJ</th>
+                                <th class="px-3 py-2 text-left">D — Chave PIX</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100 text-xs text-gray-600">
+                            <tr>
+                                <td class="px-3 py-2 font-mono font-semibold">42</td>
+                                <td class="px-3 py-2">Ademário</td>
+                                <td class="px-3 py-2 font-mono">12.345.678/0001-90</td>
+                                <td class="px-3 py-2 font-mono">12.345.678/0001-90</td>
+                            </tr>
+                            <tr class="bg-gray-50">
+                                <td class="px-3 py-2 font-mono font-semibold">228</td>
+                                <td class="px-3 py-2">Adilson Costa</td>
+                                <td class="px-3 py-2 font-mono">37.148.610/0001-47</td>
+                                <td class="px-3 py-2 font-mono">1998706-0403</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <ul class="text-xs text-gray-500 space-y-1 mb-4">
+                    <li>• <strong>Coluna A</strong> deve conter o <strong>ID Motorista (driver_id)</strong> — o mesmo da base de motoristas</li>
+                    <li>• A Chave PIX pode ser CNPJ, telefone, e-mail ou chave aleatória</li>
+                    <li>• Linhas sem CNPJ e sem PIX são ignoradas</li>
+                    <li>• Um motorista pode ter múltiplas linhas (múltiplos CNPJs)</li>
+                </ul>
+                <button onclick="baixarExemploCnpjPix()" class="w-full flex items-center justify-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2.5 rounded-xl font-semibold text-sm transition-all">
+                    <i data-lucide="download" class="w-4 h-4"></i> Baixar planilha de exemplo
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Ajuda Contratos ZIP -->
+    <div id="ajudaContratosModal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+            <div class="bg-orange-500 px-5 py-4 flex items-center justify-between rounded-t-2xl">
+                <div>
+                    <h3 class="text-base font-bold text-white flex items-center gap-2">
+                        <i data-lucide="archive" class="w-4 h-4"></i> Formato — ZIP de Contratos
+                    </h3>
+                    <p class="text-white/70 text-xs mt-0.5">Arquivos PDF dentro de um .zip</p>
+                </div>
+                <button onclick="document.getElementById('ajudaContratosModal').classList.add('hidden')" class="text-white/80 hover:text-white">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="p-5">
+                <p class="text-xs font-semibold text-gray-600 mb-2">Padrão do nome de cada arquivo:</p>
+                <div class="bg-gray-900 text-green-400 font-mono text-sm rounded-xl px-4 py-3 mb-4">
+                    contrato_<span class="text-yellow-300">{ID Motorista}</span>_<span class="text-blue-300">{Nome}</span>.pdf
+                </div>
+                <div class="overflow-hidden rounded-xl border border-gray-200 mb-4">
+                    <table class="w-full text-xs">
+                        <thead>
+                            <tr class="bg-orange-50 text-orange-800 font-semibold uppercase">
+                                <th class="px-3 py-2 text-left">Exemplo de nome do arquivo</th>
+                                <th class="px-3 py-2 text-left">Driver ID</th>
+                                <th class="px-3 py-2 text-left">Motorista</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100 text-gray-600">
+                            <tr>
+                                <td class="px-3 py-2 font-mono">contrato_42_Ademário.pdf</td>
+                                <td class="px-3 py-2 font-mono font-semibold">42</td>
+                                <td class="px-3 py-2">Ademário</td>
+                            </tr>
+                            <tr class="bg-gray-50">
+                                <td class="px-3 py-2 font-mono">contrato_228_Adilson Costa.pdf</td>
+                                <td class="px-3 py-2 font-mono font-semibold">228</td>
+                                <td class="px-3 py-2">Adilson Costa</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <ul class="text-xs text-gray-500 space-y-1">
+                    <li>• O <strong>ID Motorista</strong> é o <strong>driver_id</strong> da base de motoristas</li>
+                    <li>• O nome após o ID é apenas para identificação visual — não é usado no matching</li>
+                    <li>• Arquivos que não seguirem o padrão <code class="bg-gray-100 px-1 rounded">contrato_{número}_*.pdf</code> serão reportados como não encontrados</li>
+                    <li>• O ZIP pode conter subpastas — os arquivos são localizados independente da estrutura</li>
+                </ul>
             </div>
         </div>
     </div>
@@ -1358,17 +1466,16 @@
                 let atualizados = 0, ignorados = 0;
 
                 for (const row of rows) {
-                    const vehicleId = row[0] ? parseInt(row[0]) : null;
+                    const driverId  = row[0] ? parseInt(row[0]) : null;
                     const nomeRow   = (row[1] || '').toString().trim();
                     const cnpj      = (row[2] || '').toString().trim();
                     const chavePix  = (row[3] || '').toString().trim();
 
                     if (!cnpj && !chavePix) { ignorados++; continue; }
 
-                    // Encontrar prestador: por vehicleId primeiro, depois por nome
-                    let prestador = vehicleId ? findPrestadorByVehicleId(vehicleId) : null;
-                    if (!prestador && nomeRow) prestador = findPrestadorByNome(nomeRow);
-                    if (!prestador) { conflitos.push(`Não encontrado: ID ${vehicleId} / "${nomeRow}"`); continue; }
+                    // Match exclusivo por driver_id (col 0)
+                    let prestador = driverId ? findPrestadorByVehicleId(driverId) : null;
+                    if (!prestador) { conflitos.push(`Não encontrado: ID ${driverId} / "${nomeRow}"`); continue; }
 
                     // Verificar duplicata de CNPJ global
                     if (cnpj) {
@@ -1439,24 +1546,17 @@
                 const naoEncontrados = [];
 
                 for (const fileName of pdfFiles) {
-                    const baseName = fileName.replace(/^.*[\\/]/, ''); // strip path
-                    // Parse: contrato_{vehicleId}_{nome}.pdf
+                    const baseName = fileName.replace(/^.*[\\/]/, '');
+                    // Parse: contrato_{driverId}_{nome}.pdf
                     const match = baseName.match(/^contrato_(\d+)_(.+)\.pdf$/i);
 
                     let prestador = null;
                     if (match) {
-                        const vehicleId = parseInt(match[1]);
-                        prestador = findPrestadorByVehicleId(vehicleId);
-                        if (!prestador) {
-                            // Fallback: tenta pelo nome
-                            const nomePart = match[2];
-                            prestador = findPrestadorByNome(nomePart);
-                        }
-                    } else {
-                        // Arquivo não segue o padrão — tenta pelo nome sem extensão
-                        const nomePart = baseName.replace(/\.pdf$/i, '');
-                        prestador = findPrestadorByNome(nomePart);
+                        const driverId = parseInt(match[1]);
+                        // Match exclusivo por driver_id
+                        prestador = findPrestadorByVehicleId(driverId);
                     }
+                    // Sem match por nome — arquivo precisa seguir o padrão contrato_{driverId}_{nome}.pdf
 
                     if (!prestador) {
                         naoEncontrados.push(baseName);
@@ -1517,197 +1617,104 @@
                 const header = allRows[0] || [];
                 const rows = allRows.slice(1).filter(r => r[0]);
 
-                // Detectar formato pela quantidade de colunas preenchidas no header
-                // FORMATO ANTIGO: ID(0) | Veículo(1) | Distribution Center(2) | In Use(3) | Time(4)  — 5 colunas
-                // FORMATO NOVO:   ID Motorista(0) | Motorista(1) | ID Veículo(2) | Veículo(3) | CD(4) | In Use(5) | Time(6) — 7 colunas
-                const isNovoFormato = header.length >= 7 || (header[2] && header[2].toString().toLowerCase().includes('veículo'));
-                console.log(`📋 Formato detectado: ${isNovoFormato ? 'NOVO (driver_id)' : 'ANTIGO (vehicle_id)'}`);
-
+                // Formato único: ID Motorista(0)|Motorista(1)|ID Veículo(2)|Veículo(3)|CD(4)|In Use(5)|Time(6)
+                // Match exclusivo por driver_id — vehicle_id armazenado em vehicles[] apenas
                 const CDS_TESTE = ['cd teste - frexco', 'cd teste - piedade', 'cd teste'];
                 const idsNaBase = new Set();
                 const rowsValidos = [];
 
-                if (isNovoFormato) {
-                    // Agrupar por driver_id — um único prestador por motorista
-                    const byDriver = {};
-                    for (const row of rows) {
-                        const driverId  = parseInt(row[0]);
-                        const nome      = (row[1] || '').toString().trim();
-                        const vehicleId = row[2] ? parseInt(row[2]) : null;
-                        const veiculo   = (row[3] || '').toString().trim();
-                        const cdRaw     = (row[4] || '').toString().trim();
-                        const inUse     = row[5] === true || row[5] === 'true' || row[5] === 1;
-                        const time      = (row[6] || '').toString().trim();
-                        if (!nome || isNaN(driverId)) continue;
-                        if (cdRaw && CDS_TESTE.includes(cdRaw.toLowerCase())) continue;
+                // Agrupar por driver_id — um único prestador por motorista
+                const byDriver = {};
+                for (const row of rows) {
+                    const driverId  = parseInt(row[0]);
+                    const nome      = (row[1] || '').toString().trim();
+                    const vehicleId = row[2] ? parseInt(row[2]) : null;
+                    const veiculo   = (row[3] || '').toString().trim();
+                    const cdRaw     = (row[4] || '').toString().trim();
+                    const inUse     = row[5] === true || row[5] === 'true' || row[5] === 1;
+                    const time      = (row[6] || '').toString().trim();
+                    if (!nome || isNaN(driverId)) continue;
+                    if (cdRaw && CDS_TESTE.includes(cdRaw.toLowerCase())) continue;
 
-                        if (!byDriver[driverId]) {
-                            byDriver[driverId] = {
-                                driverId, nome, vehicleId, // primeiro vehicle_id para migração
-                                cd: cdRaw || 'CD Desconhecido', inUse, time,
-                                vehicles: []
-                            };
-                        }
-                        // Armazena todos os veículos do motorista
-                        if (vehicleId) byDriver[driverId].vehicles.push({ vehicleId, nome: veiculo || nome });
+                    if (!byDriver[driverId]) {
+                        byDriver[driverId] = {
+                            driverId, nome, cd: cdRaw || 'CD Desconhecido', inUse, time,
+                            vehicles: []
+                        };
                     }
-                    for (const entry of Object.values(byDriver)) {
-                        idsNaBase.add(entry.driverId);
-                        rowsValidos.push(entry);
-                    }
-                } else {
-                    // Formato antigo: um registro por linha, vehicleId = chave
-                    for (const row of rows) {
-                        const driverId  = parseInt(row[0]);
-                        const nome      = (row[1] || '').toString().trim();
-                        const cdRaw     = (row[2] || '').toString().trim();
-                        const inUse     = row[3] === true || row[3] === 'true' || row[3] === 1;
-                        const time      = (row[4] || '').toString().trim();
-                        if (!nome || isNaN(driverId)) continue;
-                        if (cdRaw && CDS_TESTE.includes(cdRaw.toLowerCase())) continue;
-                        idsNaBase.add(driverId);
-                        rowsValidos.push({ driverId, nome, vehicleId: null, vehicles: [],
-                            cd: cdRaw || 'CD Desconhecido', inUse, time });
-                    }
+                    if (vehicleId) byDriver[driverId].vehicles.push({ vehicleId, nome: veiculo || nome });
+                }
+                for (const entry of Object.values(byDriver)) {
+                    idsNaBase.add(entry.driverId);
+                    rowsValidos.push(entry);
                 }
 
-                let novos = 0, atualizados = 0, excluidos = 0, migrados = 0;
+                let novos = 0, atualizados = 0, excluidos = 0;
 
-                if (isNovoFormato) {
-                    // ─── NOVO FORMATO: match exclusivo por driverId ───────────────────────────
-                    // vehicleId é armazenado em vehicles[] apenas, nunca usado para matching.
-                    // Mapa: driverId → entry (para encontrar tanto pré quanto pós-migração)
-                    // Também mapeia vehicleId → entry para suportar a migração única da base antiga.
-                    const driverIdMap = new Map();
-                    for (const entry of rowsValidos) {
-                        // Chave principal: driverId
-                        if (!driverIdMap.has(entry.driverId)) {
-                            driverIdMap.set(entry.driverId, entry);
-                        }
-                        // Chave secundária: vehicleId (apenas para migração de base antiga)
-                        if (entry.vehicleId && !driverIdMap.has(entry.vehicleId)) {
-                            driverIdMap.set(entry.vehicleId, entry);
-                        }
-                    }
+                // Match EXCLUSIVO por driverId — sem fallback por vehicleId
+                const driverIdMap = new Map();
+                for (const entry of rowsValidos) {
+                    driverIdMap.set(entry.driverId, entry);
+                }
 
-                    const matchedDriverIds = new Set();
+                const matchedDriverIds = new Set();
 
-                    // Para cada registro existente, busca pelo seu vehicleId (= driverId pós-migração
-                    // ou vehicle_id antigo na migração inicial)
-                    for (const p of [...prestadoresList]) {
-                        const vid = parseInt(p.vehicleId);
-                        if (isNaN(vid) || String(p.vehicleId).startsWith('M')) continue;
+                for (const p of [...prestadoresList]) {
+                    const vid = parseInt(p.vehicleId);
+                    if (isNaN(vid) || String(p.vehicleId).startsWith('M') || String(p.vehicleId).startsWith('L')) continue;
 
-                        const entry = driverIdMap.get(vid);
-                        if (entry) {
-                            if (matchedDriverIds.has(entry.driverId)) {
-                                // Duplicata: mescla dados no registro primário e descarta este
-                                const primario = prestadoresList.find(
-                                    x => parseInt(x.vehicleId) === entry.driverId
-                                );
-                                if (primario) {
-                                    if ((!primario.cnpjs || !primario.cnpjs.length) && p.cnpjs?.length)
-                                        primario.cnpjs = p.cnpjs;
-                                    if (!primario.contrato && p.contrato)
-                                        primario.contrato = p.contrato;
-                                }
-                                if (!useSharePoint && p.id) await deletePrestadorLocal(p.id);
-                                excluidos++;
-                            } else {
-                                // Match principal → atualizar com dados da nova base
-                                p.vehicleId = entry.driverId; // garante que usa driverId
-                                p.nome      = entry.nome;
-                                p.cd        = entry.cd;
-                                p.inUse     = entry.inUse;
-                                p.time      = entry.time || p.time || '';
-                                p.vehicles  = entry.vehicles || [];
-                                if (!useSharePoint) await savePrestadorLocal(p);
-                                matchedDriverIds.add(entry.driverId);
-                                atualizados++;
-                                migrados++;
+                    const entry = driverIdMap.get(vid);
+                    if (entry) {
+                        if (matchedDriverIds.has(entry.driverId)) {
+                            // Duplicata: mescla dados no primário e descarta
+                            const primario = prestadoresList.find(x => parseInt(x.vehicleId) === entry.driverId);
+                            if (primario) {
+                                if ((!primario.cnpjs || !primario.cnpjs.length) && p.cnpjs?.length)
+                                    primario.cnpjs = p.cnpjs;
+                                if (!primario.contrato && p.contrato)
+                                    primario.contrato = p.contrato;
                             }
-                        } else {
-                            // Não encontrado na nova base → excluir
                             if (!useSharePoint && p.id) await deletePrestadorLocal(p.id);
                             excluidos++;
-                        }
-                    }
-
-                    // Filtra lista mantendo apenas os migrados + manuais
-                    prestadoresList = prestadoresList.filter(p => {
-                        const vid = parseInt(p.vehicleId);
-                        if (isNaN(vid) || String(p.vehicleId).startsWith('M')) return true;
-                        return idsNaBase.has(vid);
-                    });
-
-                    // Cria registros novos para driverIds sem match
-                    for (const entry of rowsValidos) {
-                        if (!matchedDriverIds.has(entry.driverId)) {
-                            const novo = {
-                                vehicleId: entry.driverId, nome: entry.nome,
-                                cd: entry.cd, time: entry.time || '', inUse: entry.inUse,
-                                vehicles: entry.vehicles || [], cnpjs: [], contrato: null,
-                                fromSharePoint: useSharePoint,
-                                dataAdicao: new Date().toISOString()
-                            };
-                            if (!useSharePoint) { const id = await savePrestadorLocal(novo); novo.id = id; }
-                            prestadoresList.push(novo);
-                            novos++;
-                        }
-                    }
-
-                } else {
-                    // ─── FORMATO ANTIGO: match por vehicleId (=driverId) via snapshot ─────────
-                    const snapshotAntigo = {};
-                    prestadoresList.forEach(p => {
-                        if (!p.vehicleId) return;
-                        const id = String(p.vehicleId);
-                        if (id.startsWith('M')) return;
-                        snapshotAntigo[parseInt(id)] = p;
-                    });
-
-                    for (const { driverId, nome, vehicleId, vehicles, cd, inUse, time } of rowsValidos) {
-                        const existente = snapshotAntigo[driverId] || null;
-                        if (existente) {
-                            existente.vehicleId = driverId;
-                            existente.nome      = nome;
-                            existente.cd        = cd;
-                            existente.inUse     = inUse;
-                            existente.time      = time || existente.time || '';
-                            existente.vehicles  = vehicles || existente.vehicles || [];
-                            if (!useSharePoint) await savePrestadorLocal(existente);
-                            atualizados++;
                         } else {
-                            const novo = {
-                                vehicleId: driverId, nome, cd, time: time || '', inUse,
-                                vehicles: vehicles || [], cnpjs: [], contrato: null,
-                                fromSharePoint: useSharePoint,
-                                dataAdicao: new Date().toISOString()
-                            };
-                            if (!useSharePoint) { const id = await savePrestadorLocal(novo); novo.id = id; }
-                            prestadoresList.push(novo);
-                            novos++;
+                            // Match: atualiza cadastro, preserva cnpjs e contrato
+                            p.vehicleId = entry.driverId;
+                            p.nome      = entry.nome;
+                            p.cd        = entry.cd;
+                            p.inUse     = entry.inUse;
+                            p.time      = entry.time || p.time || '';
+                            p.vehicles  = entry.vehicles || [];
+                            if (!useSharePoint) await savePrestadorLocal(p);
+                            matchedDriverIds.add(entry.driverId);
+                            atualizados++;
                         }
-                    }
-
-                    // Exclui registros não presentes na base importada
-                    const aExcluir = prestadoresList.filter(p => {
-                        if (!p.vehicleId) return false;
-                        const id = String(p.vehicleId);
-                        if (id.startsWith('M')) return false;
-                        return !idsNaBase.has(parseInt(id));
-                    });
-                    for (const p of aExcluir) {
+                    } else {
+                        // Não está na nova base → excluir
                         if (!useSharePoint && p.id) await deletePrestadorLocal(p.id);
                         excluidos++;
                     }
-                    if (aExcluir.length > 0) {
-                        prestadoresList = prestadoresList.filter(p => {
-                            if (!p.vehicleId) return true;
-                            const id = String(p.vehicleId);
-                            if (id.startsWith('M')) return true;
-                            return idsNaBase.has(parseInt(id));
-                        });
+                }
+
+                // Filtra lista: mantém migrados + manuais (M-) + líderes (L-)
+                prestadoresList = prestadoresList.filter(p => {
+                    const id = String(p.vehicleId || '');
+                    if (id.startsWith('M') || id.startsWith('L')) return true;
+                    return idsNaBase.has(parseInt(id));
+                });
+
+                // Cria registros novos para driverIds sem match
+                for (const entry of rowsValidos) {
+                    if (!matchedDriverIds.has(entry.driverId)) {
+                        const novo = {
+                            vehicleId: entry.driverId, nome: entry.nome,
+                            cd: entry.cd, time: entry.time || '', inUse: entry.inUse,
+                            vehicles: entry.vehicles || [], cnpjs: [], contrato: null,
+                            fromSharePoint: useSharePoint,
+                            dataAdicao: new Date().toISOString()
+                        };
+                        if (!useSharePoint) { const id = await savePrestadorLocal(novo); novo.id = id; }
+                        prestadoresList.push(novo);
+                        novos++;
                     }
                 }
 
@@ -1722,8 +1729,7 @@
                 }
                 reprocessExtractedResults();
 
-                let msg = `✅ Base sincronizada! (formato ${isNovoFormato ? 'novo' : 'antigo'})\n\n${novos} novos\n${atualizados} atualizados\n${excluidos} excluídos`;
-                if (migrados > 0) msg += `\n${migrados} migrado(s) para driver_id`;
+                let msg = `✅ Base sincronizada!\n\n${novos} novos\n${atualizados} atualizados\n${excluidos} excluídos`;
                 alert(msg);
             } catch(e) {
                 console.error(e);
@@ -4520,10 +4526,33 @@
             XLSX.writeFile(wb, `detalhe_${(_concilDetalheNomeAtual||'motorista').replace(/\s/g,'_')}_${new Date().toISOString().slice(0,10)}.xlsx`);
         }
 
+        function abrirAjudaCnpjPix() {
+            document.getElementById('ajudaCnpjPixModal').classList.remove('hidden');
+            lucide.createIcons();
+        }
+        function abrirAjudaContratos() {
+            document.getElementById('ajudaContratosModal').classList.remove('hidden');
+            lucide.createIcons();
+        }
+
+        function baixarExemploCnpjPix() {
+            const wb = XLSX.utils.book_new();
+            const data = [
+                ['ID Motorista', 'Nome', 'CNPJ', 'Chave PIX'],
+                [42, 'Ademário', '12.345.678/0001-90', '12.345.678/0001-90'],
+                [228, 'Adilson Costa', '37.148.610/0001-47', '1998706-0403'],
+                [672, 'Adriano Souza', '49.457.157/0001-30', 'adriano@email.com'],
+            ];
+            const ws = XLSX.utils.aoa_to_sheet(data);
+            ws['!cols'] = [{wch:16},{wch:24},{wch:22},{wch:24}];
+            // Bold header style hint via cell format
+            XLSX.utils.book_append_sheet(wb, ws, 'CNPJs_PIX');
+            XLSX.writeFile(wb, 'modelo_cnpjs_pix.xlsx');
+        }
+
         // Inicialização
         (async function init() {
             try {
-                await initPrestadoresDB();
                 await migrateFromLegacyDBs();
                 await loadPrestadoresLocal();
                 // Notas vivem no SharePoint — serão carregadas ao conectar
