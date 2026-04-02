@@ -2515,6 +2515,8 @@
         function reprocessExtractedResults() {
             if (extractedResults.length === 0) {
                 console.log('Nenhum resultado para reprocessar');
+                // Ainda atualiza a UI mesmo sem notas
+                updateCoverageStats();
                 return;
             }
 
@@ -2525,22 +2527,25 @@
 
             // Atualizar cada resultado
             extractedResults.forEach(result => {
+                // Salva responsável anterior ANTES de sobrescrever
+                const responsavelAnterior = result.responsavel;
+
                 // Atualizar responsável pelo CNPJ
                 const prestadorResp = findPrestadorByCnpj(result.cnpj);
                 result.responsavel = prestadorResp
                     ? { vehicleId: prestadorResp.vehicleId, nome: prestadorResp.nome }
                     : null;
-                // Se ainda não tinha motoristas associados, preencher com responsável
+
+                // ── CASO 1: lista vazia → preencher automaticamente ──
                 if ((!result.motoristasNaNota || result.motoristasNaNota.length === 0) && result.responsavel) {
-                    // Se o responsável é líder, pré-preencher com motoristasVinculados do líder
                     if (prestadorResp?.tipo === 'lider' && (prestadorResp.motoristasVinculados || []).length > 0) {
                         result.motoristasNaNota = prestadorResp.motoristasVinculados.map(m => ({...m}));
                     } else {
                         result.motoristasNaNota = [{ ...result.responsavel }];
                     }
                 }
-                // Se havia exatamente 1 motorista (auto-preenchido) e o CNPJ aponta para outro, corrigir
-                // EXCETO se o prestador é um líder — líderes não devem substituir os motoristas vinculados
+                // ── CASO 2: 1 motorista auto-preenchido, responsável mudou → corrigir ──
+                // (exceto líderes, que têm múltiplos motoristas vinculados)
                 else if (
                     prestadorResp &&
                     prestadorResp.tipo !== 'lider' &&
@@ -2550,18 +2555,29 @@
                 ) {
                     result.motoristasNaNota = [{ vehicleId: prestadorResp.vehicleId, nome: prestadorResp.nome }];
                 }
+                // ── CASO 3 (crítico): responsável foi EXCLUÍDO da base ──
+                // Remove da lista apenas os vínculos que apontavam para esse prestador.
+                // Vínculos para outros motoristas (adicionados manualmente) são preservados.
+                else if (!prestadorResp && responsavelAnterior && Array.isArray(result.motoristasNaNota)) {
+                    const vidAnterior = String(responsavelAnterior.vehicleId);
+                    result.motoristasNaNota = result.motoristasNaNota.filter(
+                        m => String(m.vehicleId) !== vidAnterior
+                    );
+                }
 
-                // Normalizar vehicleIds em motoristasNaNota para o driverId atual
-                // (notas antigas podem ter vehicle_ids obsoletos antes da migração)
+                // ── Normalização + limpeza de vínculos inválidos ──
+                // Atualiza IDs obsoletos e remove vínculos para prestadores excluídos
                 if (Array.isArray(result.motoristasNaNota)) {
-                    result.motoristasNaNota = result.motoristasNaNota.map(m => {
-                        const p = findPrestadorByVehicleId(m.vehicleId);
-                        if (p && parseInt(p.vehicleId) !== parseInt(m.vehicleId)) {
-                            // vehicle_id antigo — atualiza para driverId
-                            return { vehicleId: p.vehicleId, nome: p.nome };
-                        }
-                        return m;
-                    });
+                    result.motoristasNaNota = result.motoristasNaNota
+                        .map(m => {
+                            const p = findPrestadorByVehicleId(m.vehicleId);
+                            if (!p) return null; // prestador não existe mais → remove vínculo
+                            if (parseInt(p.vehicleId) !== parseInt(m.vehicleId)) {
+                                return { vehicleId: p.vehicleId, nome: p.nome }; // ID desatualizado → atualiza
+                            }
+                            return m;
+                        })
+                        .filter(Boolean);
                 }
 
                 // Re-verificar contrato (CNPJ-first)
@@ -2569,39 +2585,24 @@
                 const contratoMatch = temContrato(result.arquivo, result.cnpj);
                 result.temContrato = contratoMatch.match;
                 result.nomeContrato = contratoMatch.contrato;
-
-                if (!contratoAntes && result.temContrato) {
-                    contratosAtualizados++;
-                }
+                if (!contratoAntes && result.temContrato) contratosAtualizados++;
 
                 // Re-verificar PIX (CNPJ-first)
                 const pixAntes = result.chavePix || '';
                 result.chavePix = findPixByFileName(result.arquivo, result.cnpj);
-
-                if (!pixAntes && result.chavePix) {
-                    pixAtualizados++;
-                }
+                if (!pixAntes && result.chavePix) pixAtualizados++;
             });
 
-            // Limpar e re-renderizar tabela
+            // Re-renderizar tabela
             const tbody = document.getElementById('resultsBody');
             tbody.innerHTML = '';
-            
-            extractedResults.forEach(result => {
-                renderRow(result);
-            });
+            extractedResults.forEach(result => renderRow(result));
 
             atualizarOpcoesTime();
             updateCoverageStats();
             saveResultsToStorage();
 
-            console.log(`✅ Reprocessamento concluído!`);
-            console.log(`   Contratos encontrados: ${contratosAtualizados}`);
-            console.log(`   PIX encontrados: ${pixAtualizados}`);
-
-            if (contratosAtualizados > 0 || pixAtualizados > 0) {
-                alert(`✅ Dados atualizados!\n\nContratos: +${contratosAtualizados}\nChaves PIX: +${pixAtualizados}`);
-            }
+            console.log(`✅ Reprocessamento concluído! Contratos: +${contratosAtualizados} | PIX: +${pixAtualizados}`);
         }
 
         // ========================================
