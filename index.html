@@ -2393,24 +2393,30 @@
             const zip = new JSZip();
             for (const p of comContrato) {
                 if (!p.contrato) continue;
-                if (useSharePoint && p.contrato.id) {
+
+                // Nome padronizado para reimportação: contrato_{driverId}_{nome}.pdf
+                const safeName = (p.nome || 'sem_nome').replace(/[/\\:*?"<>|]/g, '_').trim();
+                const zipFileName = `contrato_${p.vehicleId}_${safeName}.pdf`;
+
+                if (useSharePoint) {
+                    // Tenta buscar pelo spFileName (caminho) primeiro, depois pelo id
+                    const fetchUrl = p.contrato.spFileName
+                        ? `https://graph.microsoft.com/v1.0/sites/${SP_SITE_ID}/drive/special/approot:/${p.contrato.spFileName}:/content`
+                        : p.contrato.id
+                            ? `https://graph.microsoft.com/v1.0/sites/${SP_SITE_ID}/drive/items/${p.contrato.id}/content`
+                            : null;
+
+                    if (!fetchUrl) continue;
                     try {
-                        const resp = await fetch(
-                            `https://graph.microsoft.com/v1.0/sites/${SP_SITE_ID}/drive/items/${p.contrato.id}`,
-                            { headers: { 'Authorization': `Bearer ${spAccessToken}` } }
-                        );
+                        const resp = await fetch(fetchUrl, { headers: { 'Authorization': `Bearer ${spAccessToken}` } });
                         if (resp.ok) {
-                            const data = await resp.json();
-                            if (data['@microsoft.graph.downloadUrl']) {
-                                const fileResp = await fetch(data['@microsoft.graph.downloadUrl']);
-                                const buf = await fileResp.arrayBuffer();
-                                zip.file(p.contrato.nomeArquivo, buf);
-                            }
+                            const buf = await resp.arrayBuffer();
+                            zip.file(zipFileName, buf);
                         }
-                    } catch(e) { console.error('Zip SP:', e); }
+                    } catch(e) { console.error('Zip SP contrato:', p.nome, e); }
                 } else if (p.contrato.fileData) {
                     const b64 = p.contrato.fileData.split(',')[1];
-                    zip.file(p.contrato.nomeArquivo, b64, { base64: true });
+                    zip.file(zipFileName, b64, { base64: true });
                 }
             }
             const blob = await zip.generateAsync({ type: 'blob' });
