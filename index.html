@@ -1412,6 +1412,29 @@
             return { match: false, contrato: null };
         }
 
+        // Verifica contrato para todos os motoristas na nota
+        // Retorna: { status: 'sim'|'nao'|'parcial', contrato: nomeContrato|null }
+        function verificarContratoNota(nota) {
+            const motoristas = (nota.motoristasNaNota && nota.motoristasNaNota.length > 0)
+                ? nota.motoristasNaNota
+                : (nota.responsavel ? [nota.responsavel] : []);
+
+            if (motoristas.length === 0) return { status: 'nao', contrato: null };
+
+            let comContrato = 0;
+            let primeiroContrato = null;
+            for (const m of motoristas) {
+                const p = findPrestadorByVehicleId(m.vehicleId);
+                if (p && p.contrato) {
+                    comContrato++;
+                    if (!primeiroContrato) primeiroContrato = p.contrato.nomeArquivo;
+                }
+            }
+            if (comContrato === 0)              return { status: 'nao',     contrato: null };
+            if (comContrato === motoristas.length) return { status: 'sim',  contrato: primeiroContrato };
+            return { status: 'parcial', contrato: primeiroContrato };
+        }
+
         function findPixByFileName(fileName, cnpj) {
             // PIX resolvido exclusivamente pelo CNPJ — sem fallback por nome de arquivo
             if (cnpj) return findPixByCnpj(cnpj);
@@ -1985,11 +2008,17 @@
                         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
                         const buf = await resp.arrayBuffer();
 
-                        // Nome do arquivo: Responsável_NF.pdf
-                        const resp_nome = (nota.responsavel?.nome || nota.prestador || nota.arquivo || 'sem_responsavel')
-                            .replace(/[/\\:*?"<>|]/g, '_').trim();
+                        // Nome do arquivo: baseado nos Motoristas na Nota
+                        const motoristas = (nota.motoristasNaNota && nota.motoristasNaNota.length > 0)
+                            ? nota.motoristasNaNota
+                            : (nota.responsavel ? [nota.responsavel] : []);
+                        const nomesMotoristas = motoristas
+                            .map(m => (m.nome || '').replace(/[/\\:*?"<>|]/g, '_').trim())
+                            .filter(Boolean)
+                            .join(', ');
+                        const nomeBase = nomesMotoristas || nota.prestador || nota.arquivo || 'sem_motorista';
                         const nf = nota.numeroNF && nota.numeroNF !== '?' ? `_NF${nota.numeroNF}` : '';
-                        const zipName = `${resp_nome}${nf}.pdf`;
+                        const zipName = `${nomeBase}${nf}.pdf`;
                         zip.file(zipName, buf);
                         ok++;
                     } catch(e) {
@@ -2534,11 +2563,28 @@
                 return;
             }
 
-            const notasComContrato = filtradas.filter(r => r.temContrato).length;
-            const percentage = Math.round((notasComContrato / totalNotas) * 100);
+            // Cobertura de contratos: por motorista único nas notas filtradas
+            const motoristasSet = new Map(); // vehicleId → tem contrato?
+            for (const r of filtradas) {
+                const motoristas = (r.motoristasNaNota && r.motoristasNaNota.length > 0)
+                    ? r.motoristasNaNota
+                    : (r.responsavel ? [r.responsavel] : []);
+                for (const m of motoristas) {
+                    if (!m.vehicleId) continue;
+                    const p = findPrestadorByVehicleId(m.vehicleId);
+                    const hasContrato = !!(p && p.contrato);
+                    // Se o motorista aparece em múltiplas notas, considera que tem contrato se tiver em qualquer uma
+                    if (!motoristasSet.has(m.vehicleId) || hasContrato) {
+                        motoristasSet.set(m.vehicleId, hasContrato);
+                    }
+                }
+            }
+            const totalMotoristas = motoristasSet.size;
+            const motoristasComContrato = [...motoristasSet.values()].filter(Boolean).length;
+            const percentage = totalMotoristas > 0 ? Math.round((motoristasComContrato / totalMotoristas) * 100) : 0;
             document.getElementById('statsPanel').classList.remove('hidden');
             document.getElementById('coveragePercent').textContent = `${percentage}%`;
-            document.getElementById('coverageText').textContent = `${notasComContrato} de ${totalNotas} com contrato`;
+            document.getElementById('coverageText').textContent = `${motoristasComContrato} de ${totalMotoristas} com contrato`;
 
             const totalLiquido = filtradas.reduce((sum, r) => sum + (r.vLiquido || 0), 0);
             const totalServico = filtradas.reduce((sum, r) => sum + (r.vServico || 0), 0);
@@ -2631,11 +2677,12 @@
                         .filter(Boolean);
                 }
 
-                // Re-verificar contrato (CNPJ-first)
+                // Re-verificar contrato para todos os motoristas da nota
                 const contratoAntes = result.temContrato;
-                const contratoMatch = temContrato(result.arquivo, result.cnpj);
-                result.temContrato = contratoMatch.match;
-                result.nomeContrato = contratoMatch.contrato;
+                const contratoInfo = verificarContratoNota(result);
+                result.temContrato       = contratoInfo.status !== 'nao';
+                result.temContratoStatus = contratoInfo.status; // 'sim' | 'parcial' | 'nao'
+                result.nomeContrato      = contratoInfo.contrato;
                 if (!contratoAntes && result.temContrato) contratosAtualizados++;
 
                 // Re-verificar PIX (CNPJ-first)
@@ -2727,9 +2774,11 @@
                     data.motoristasNaNota = data.responsavel ? [{ ...data.responsavel }] : [];
 
                     // Verifica contrato (CNPJ-first)
-                    const contratoMatch = temContrato(file.name, data.cnpj);
-                    data.temContrato = contratoMatch.match;
-                    data.nomeContrato = contratoMatch.contrato;
+                    // motoristasNaNota set just above — use full check
+                    const contratoInfo0 = verificarContratoNota(data);
+                    data.temContrato       = contratoInfo0.status !== 'nao';
+                    data.temContratoStatus = contratoInfo0.status;
+                    data.nomeContrato      = contratoInfo0.contrato;
 
                     // Busca chave PIX (CNPJ-first)
                     data.chavePix = findPixByFileName(file.name, data.cnpj);
@@ -3238,9 +3287,12 @@
                 ? `<button onclick="abrirOcrEdit(${notaIdx})" class="ml-1 p-0.5 text-orange-500 hover:text-orange-700 rounded transition-colors flex-shrink-0 inline-flex" title="Editar campos OCR"><svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></button>`
                 : '';
 
-            const contratoIcon = row.temContrato
+            const contratoStatus = row.temContratoStatus || (row.temContrato ? 'sim' : 'nao');
+            const contratoIcon = contratoStatus === 'sim'
                 ? `<span class="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 rounded-md text-xs font-semibold" title="${row.nomeContrato || 'Contrato encontrado'}"><i data-lucide="check-circle" class="w-3 h-3"></i> Sim</span>`
-                : `<span class="inline-flex items-center gap-1 px-2 py-1 bg-red-100 text-red-700 rounded-md text-xs font-semibold"><i data-lucide="x-circle" class="w-3 h-3"></i> Não</span>`;
+                : contratoStatus === 'parcial'
+                    ? `<span class="inline-flex items-center gap-1 px-2 py-1 bg-yellow-100 text-yellow-700 rounded-md text-xs font-semibold" title="Alguns motoristas sem contrato"><i data-lucide="alert-circle" class="w-3 h-3"></i> Parcial</span>`
+                    : `<span class="inline-flex items-center gap-1 px-2 py-1 bg-red-100 text-red-700 rounded-md text-xs font-semibold"><i data-lucide="x-circle" class="w-3 h-3"></i> Não</span>`;
 
             const responsavelNome = row.responsavel ? row.responsavel.nome : (row.prestador || '-');
             const responsavelCell = `<span class="font-medium text-gray-800 truncate block max-w-[130px]" title="${responsavelNome}">${responsavelNome}</span>`;
@@ -3327,9 +3379,10 @@
                 r.motoristasNaNota = [{ ...r.responsavel }];
             }
             r.chavePix = findPixByFileName(r.arquivo, r.cnpj);
-            const contratoMatch = temContrato(r.arquivo, r.cnpj);
-            r.temContrato = contratoMatch.match;
-            r.nomeContrato = contratoMatch.contrato;
+            const contratoInfoM = verificarContratoNota(r);
+            r.temContrato       = contratoInfoM.status !== 'nao';
+            r.temContratoStatus = contratoInfoM.status;
+            r.nomeContrato      = contratoInfoM.contrato;
 
             saveResultsToStorage();
             if (useSharePoint && r._spFileName) await saveNotaSP(r);
